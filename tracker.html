@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Armadillo — Teljes Megvalósítás Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f1f5f9; }
+        .completed-text { opacity: 0.55; text-decoration: line-through; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="p-4 md:p-6">
+
+<div id="app" class="max-w-4xl mx-auto">
+
+    <!-- FEJLÉC -->
+    <div class="bg-slate-800 text-white p-5 rounded-t-xl shadow-lg flex justify-between items-center">
+        <div>
+            <h1 class="text-xl md:text-2xl font-bold">🏦 Armadillo Pénzügyi Automatizáció</h1>
+            <p class="text-slate-300 text-xs mt-1">Teljes megvalósítás tracker · PRE-0 → Fázis 5 · Élesítés</p>
+        </div>
+        <div class="text-right flex-shrink-0 ml-4">
+            <div class="text-3xl font-bold text-emerald-400">{{ overallProgress }}%</div>
+            <div class="text-xs text-slate-300">{{ overallCompleted }} / {{ tasks.length }} feladat</div>
+        </div>
+    </div>
+
+    <!-- ÖSSZESÍTETT PROGRESS BAR -->
+    <div class="w-full bg-slate-300 h-2 overflow-hidden">
+        <div class="bg-emerald-500 h-full transition-all duration-700" :style="{ width: overallProgress + '%' }"></div>
+    </div>
+
+    <!-- FÁZIS TABS -->
+    <div class="flex space-x-1 overflow-x-auto no-scrollbar bg-slate-100 border border-slate-200 border-t-0 p-2 rounded-b-xl shadow mb-4">
+        <button v-for="phase in phases" :key="phase.id"
+                @click="activePhase = phase.id"
+                class="flex-shrink-0 px-3 py-2 rounded-lg font-bold text-xs whitespace-nowrap transition-all duration-200 flex items-center gap-1.5 border shadow-sm"
+                :class="activePhase === phase.id ? phase.activeClass : 'bg-white text-slate-600 hover:bg-slate-50 border-slate-200'">
+            <span v-if="isPhaseBlocked(phase.id) && getPhaseProgress(phase.id) < 100">🔒</span>
+            <span v-else-if="getPhaseProgress(phase.id) === 100">✅</span>
+            {{ phase.label }}
+            <span class="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
+                  :class="activePhase === phase.id
+                    ? 'bg-white/25 text-white'
+                    : (getPhaseProgress(phase.id) === 100
+                        ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                        : 'bg-slate-100 text-slate-500 border border-slate-200')">
+                {{ getPhaseCompleted(phase.id) }}/{{ getPhaseTotal(phase.id) }}
+            </span>
+        </button>
+    </div>
+
+    <!-- FÁZIS TARTALOM -->
+    <div class="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
+
+        <!-- Fázis fejléc -->
+        <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between" :class="activePhaseData.headerClass">
+            <div>
+                <h2 class="text-base font-bold" :class="activePhaseData.titleClass">{{ activePhaseData.fullTitle }}</h2>
+                <p class="text-xs mt-0.5" :class="activePhaseData.subtitleClass">{{ activePhaseData.description }}</p>
+            </div>
+            <div class="text-right ml-4 flex-shrink-0">
+                <div class="text-2xl font-bold" :class="activePhaseData.titleClass">{{ getPhaseProgress(activePhase) }}%</div>
+                <div class="text-xs" :class="activePhaseData.subtitleClass">{{ getPhaseCompleted(activePhase) }}/{{ getPhaseTotal(activePhase) }}</div>
+            </div>
+        </div>
+
+        <!-- Blokkoló figyelmeztetés -->
+        <div v-if="isPhaseBlocked(activePhase)" class="mx-4 mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg text-sm">
+            <div class="font-bold text-amber-800 mb-2 flex items-center gap-2">🔒 Ez a fázis még nem indítható</div>
+            <div class="text-amber-700 space-y-1">
+                <div v-for="req in getMissingPrerequisites(activePhase)" :key="req" class="flex items-start gap-2">
+                    <span class="text-amber-500 mt-0.5 flex-shrink-0">▶</span>
+                    <span>{{ req }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Csoport fejlécek + feladatok -->
+        <div v-for="group in currentPhaseGroups" :key="group">
+            <div class="px-5 py-2 bg-slate-50 border-b border-t border-slate-100">
+                <span class="text-[11px] font-bold uppercase tracking-widest text-slate-400">{{ group }}</span>
+            </div>
+            <div v-for="task in getTasksByGroup(group)" :key="task.id"
+                 class="p-4 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors flex items-start gap-4"
+                 :class="{ 'bg-emerald-50/40 hover:bg-emerald-50/60': task.done }">
+
+                <div class="pt-0.5 flex-shrink-0">
+                    <input type="checkbox" v-model="task.done" @change="toggleTask(task)"
+                           class="w-5 h-5 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer">
+                </div>
+
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap mb-1">
+                        <span class="font-mono font-bold text-slate-500 text-xs bg-slate-100 px-2 py-0.5 rounded border border-slate-200"
+                              :class="{ 'line-through opacity-40': task.done }">{{ task.id }}</span>
+                        <span v-if="task.isBlocker" class="bg-red-100 text-red-700 text-[10px] tracking-wider font-bold px-2 py-0.5 rounded border border-red-200 uppercase">⚡ Blokkoló</span>
+                        <span v-if="task.isScript" class="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded border border-indigo-200">💻 Kód</span>
+                        <span v-if="task.isTest" class="bg-teal-100 text-teal-700 text-[10px] font-bold px-2 py-0.5 rounded border border-teal-200">🧪 Teszt</span>
+                        <span v-if="task.isDeploy" class="bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-0.5 rounded border border-orange-200">🚀 Élesítés</span>
+                        <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full border" :class="getOwnerClass(task.owner)">{{ task.owner }}</span>
+                    </div>
+                    <div class="text-slate-700 text-sm font-medium leading-snug" :class="{ 'completed-text text-slate-400': task.done }">
+                        {{ task.title }}
+                    </div>
+                    <div v-if="task.testDesc && !task.done" class="mt-2 text-xs text-teal-700 bg-teal-50 border border-teal-200 rounded p-2 leading-relaxed" v-html="'<strong>Mit kell ellenőrizni:</strong><br>' + task.testDesc"></div>
+                    <div v-if="task.done" class="mt-2 text-emerald-700 font-mono text-xs bg-emerald-50 px-2 py-1 rounded border border-emerald-200 inline-flex items-center gap-1">
+                        ✓ Befejezve: {{ task.timestamp }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- LÁBLÉC -->
+    <div class="flex justify-between items-center mt-4 pt-2">
+        <button @click="resetData" class="text-sm text-red-400 hover:text-red-600 font-semibold px-3 py-2 rounded-lg hover:bg-red-50 transition flex items-center gap-1.5">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            Reset
+        </button>
+        <button @click="exportLog" class="text-sm bg-slate-800 hover:bg-slate-700 text-white font-semibold px-5 py-2.5 rounded-lg shadow transition flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            Audit Log letöltése
+        </button>
+    </div>
+
+</div>
+
+<script>
+const { createApp } = Vue;
+
+const PHASES = [
+    { id:'PRE-0',    label:'PRE-0',          fullTitle:'PRE-0 — Előkészítés',                         description:'IT felelős + Péter + Ági — infrastruktúra, hozzáférések, listák',                         headerClass:'bg-slate-50',  titleClass:'text-slate-700', subtitleClass:'text-slate-500', activeClass:'bg-slate-700 text-white border-slate-800',   prerequisiteTaskIds:[], prerequisitePhases:[] },
+    { id:'Fázis 0',  label:'Fázis 0',        fullTitle:'Fázis 0 — SSOT Sheet + Apps Script alapok',   description:'Fejlesztő + Te + Péter + Ági — scriptek, sheet létrehozás, adatok feltöltése',           headerClass:'bg-sky-50',    titleClass:'text-sky-700',   subtitleClass:'text-sky-500',   activeClass:'bg-sky-600 text-white border-sky-700',       prerequisiteTaskIds:['P3','P4','P5'], prerequisitePhases:[] },
+    { id:'Fázis 1',  label:'Fázis 1',        fullTitle:'Fázis 1 — Gmail befogadó + Gemini OCR',        description:'Fejlesztő + Te + Mindenki — automatikus számla feldolgozás',                             headerClass:'bg-emerald-50',titleClass:'text-emerald-700',subtitleClass:'text-emerald-500',activeClass:'bg-emerald-600 text-white border-emerald-700', prerequisiteTaskIds:['P1','P2'], prerequisitePhases:['Fázis 0'] },
+    { id:'Fázis 2',  label:'Fázis 2',        fullTitle:'Fázis 2 — HIÁNYOS_PO kezelés + visszautasítás',description:'Fejlesztő + Ági — döntési logika, visszautasító email workflow',                        headerClass:'bg-amber-50',  titleClass:'text-amber-700', subtitleClass:'text-amber-500', activeClass:'bg-amber-500 text-white border-amber-600',   prerequisiteTaskIds:[], prerequisitePhases:['Fázis 1'] },
+    { id:'Fázis 3',  label:'Fázis 3',        fullTitle:'Fázis 3 — Szerdai workflow + MagNet batch',    description:'Fejlesztő + Te + Péter — digest, utalási fájl, MagNet teszt import',                    headerClass:'bg-orange-50', titleClass:'text-orange-700',subtitleClass:'text-orange-500',activeClass:'bg-orange-500 text-white border-orange-600', prerequisiteTaskIds:['P9','P11'], prerequisitePhases:['Fázis 2'] },
+    { id:'Fázis 4',  label:'Fázis 4',        fullTitle:'Fázis 4 — Looker Studio Dashboard',            description:'Fejlesztő + Péter + Ági — 5 oldalas riport (párhuzamos Fázis 3-mal)',                   headerClass:'bg-violet-50', titleClass:'text-violet-700',subtitleClass:'text-violet-500',activeClass:'bg-violet-600 text-white border-violet-700', prerequisiteTaskIds:[], prerequisitePhases:['Fázis 1'] },
+    { id:'Fázis 5',  label:'Fázis 5 — Élesítés', fullTitle:'Fázis 5 — Éves karbantartás + Élesítés', description:'Fejlesztő + Te + Péter/IT — scheduled task-ok, ellenőrzőlista, éles indítás',           headerClass:'bg-rose-50',   titleClass:'text-rose-700',  subtitleClass:'text-rose-500',  activeClass:'bg-rose-600 text-white border-rose-700',     prerequisiteTaskIds:[], prerequisitePhases:['Fázis 3','Fázis 4'] },
+];
+
+const OWNER_CLASSES = {
+    'IT felelős':'bg-blue-100 text-blue-700 border-blue-200',
+    'Fejlesztő':'bg-indigo-100 text-indigo-700 border-indigo-200',
+    'Péter':'bg-amber-100 text-amber-700 border-amber-200',
+    'Ági':'bg-pink-100 text-pink-700 border-pink-200',
+    'Te':'bg-slate-100 text-slate-700 border-slate-300',
+    'Péter + Ági':'bg-teal-100 text-teal-700 border-teal-200',
+    'Ági + Fejlesztő':'bg-purple-100 text-purple-700 border-purple-200',
+    'Fejlesztő + Péter':'bg-indigo-100 text-indigo-700 border-indigo-200',
+    'Péter / IT':'bg-orange-100 text-orange-700 border-orange-200',
+    'Mindenki':'bg-emerald-100 text-emerald-700 border-emerald-200',
+};
+
+const T = (id,phase,group,title,owner,isBlocker,isScript,isTest,isDeploy,done,timestamp,testDesc=null) =>
+    ({id,phase,group,title,owner,isBlocker,isScript,isTest,isDeploy,done,timestamp,testDesc});
+
+const initialTasks = [
+// ── PRE-0 ─────────────────────────────────────────────────────────────────────
+T('P3', 'PRE-0','IT felelős','Shared Drive létrehozás + mappastruktúra (21 mappa: Bejövő számlák havi bontásban, Kötegek, Dashboard, Rendszer stb.)','IT felelős',true,false,false,false,true,'2026. 04. 03.'),
+T('P4', 'PRE-0','IT felelős','Jogosultságok: Ági + Péter = Content manager a Shared Drive-on; Rendszer/ mappa = csak IT + autobot@','IT felelős',true,false,false,false,true,'2026. 04. 03.'),
+T('P5', 'PRE-0','IT felelős','Gemini API key generálva Google AI Studio-ban, fejlesztőnek biztonságos csatornán átadva','IT felelős',true,false,false,false,true,'2026. 04. 03.'),
+T('P1', 'PRE-0','IT felelős','Google Group: szamlazas@armadillo.hu létrehozva → autobot@ tagja → tesztlevéllel ellenőrizve (autobot@ inboxában megjelent)','IT felelős',false,false,false,false,true,'2026. 04. 03.'),
+T('P2', 'PRE-0','IT felelős','Chat webhook URL-ek (3 db: OPS, Finance, Admin) generálva és fejlesztőnek átadva biztonságos csatornán','IT felelős',false,false,false,false,true,'2026. 04. 03.'),
+
+T('P6', 'PRE-0','Péter (Pénzügy)','Banki partnerek.xls kiegészítve: Teljes név, IBAN, Kategória (PROJEKT/ÁLLANDÓ), Aktív mező minden sornál','Péter',true,false,false,false,true,'2026. 04. 03.'),
+T('P9', 'PRE-0','Péter (Pénzügy)','MagNet jogcím kód megerősítve szállítói utaláshoz (MagNet NetBank → Kötegek → Köteg rögzítés → ATUTAL → Jogcím legördülő) → pontos kód átadva fejlesztőnek','Péter',false,false,false,false,false,null),
+
+T('P12','PRE-0','Ági (Operatív)','Aktív projektek listája összeállítva: minden sor Projektszám (XXX/XXXX+ÉÉ+SS), Projekt neve, Ügyfél, Dátumok, Státusz, Projektvezető — 49 projekt betöltve','Ági',true,false,false,false,true,'2026. 04. 03.'),
+T('P7', 'PRE-0','Ági (Operatív)','Jóváhagyásra jogosultak listája megírva (nevek + munkahelyi emailek) és átadva fejlesztőnek','Ági',false,false,false,false,true,'2026. 04. 03.'),
+
+// ── FÁZIS 0 ───────────────────────────────────────────────────────────────────
+T('F0-S0a','Fázis 0','TestSetup.gs — Teszt környezet',
+  'TestSetup.gs megírva: createTestEnvironment() — staging Google Sheet + test Drive mappastruktúra létrehozása egy futtatással, minden ID konzolra kiírva',
+  'Fejlesztő',false,true,false,false,false,null),
+T('F0-S0b','Fázis 0','TestSetup.gs — Teszt környezet',
+  'TestSetup.gs futtatva autobot@ fiókból: Apps Script → Run createTestEnvironment()',
+  'Te',false,false,true,false,false,null,
+  '✓ autobot@ My Drive-ban megjelent: "🧪 Armadillo TEST" mappa<br>✓ Almappák létrejöttek: "Bejövő számlák TEST/", "Kötegek TEST/", "Visszautasított TEST/"<br>✓ "[TEST] Armadillo Pénzügyi Adatbázis" Google Sheet létrejött<br>✓ Apps Script konzolban látható: staging sheet ID + 3 mappa ID → ezeket Config.gs-be kell másolni'),
+
+T('F0-S1a','Fázis 0','Config.gs',
+  'Config.gs megírva: TEST_MODE flag, staging/éles ID párok (spreadsheet, 3 Drive mappa), 3 webhook URL placeholder, küszöbértékek (PO_CONFIDENCE_THRESHOLD: 95), Gemini key PropertiesService wrapper',
+  'Fejlesztő',false,true,false,false,false,null),
+T('F0-S1b','Fázis 0','Config.gs',
+  'Config.gs tesztelve: staging ID-k beírva TestSetup konzol outputjából, TEST_MODE=true, Gemini key PropertiesService-be mentve',
+  'Te',false,false,true,false,false,null,
+  'Apps Script konzolban futtatni: <code>console.log(JSON.stringify(CONFIG))</code><br>✓ TEST_MODE: true<br>✓ SPREADSHEET_ID: staging sheet ID (nem üres string)<br>✓ Mind a 3 FOLDER_ID kitöltve<br>✓ saveGeminiKey() futtatva → függvény törölve a kódból utána<br>✓ Ellenőrzés: <code>PropertiesService.getScriptProperties().getProperty("GEMINI_KEY")</code> → nem null'),
+
+T('F0-S2a','Fázis 0','Utils.gs',
+  'Utils.gs megírva: withRetry(fn, maxAttempts, delayMs) exponenciális backoffal, getNextWorkday(date) CONFIG VERIFIED sorokból, notifyAdmin(subject, body), LockService wrapper',
+  'Fejlesztő',false,true,false,false,false,null),
+T('F0-S2b','Fázis 0','Utils.gs',
+  'Utils.gs tesztelve: testUtils() függvény futtatva az Apps Script Editorból',
+  'Te',false,false,true,false,false,null,
+  '✓ withRetry: szándékosan hibás fn átadva → konzolban 3 kísérlet látható (30s→60s→90s szünetekkel), majd exception dobódik<br>✓ getNextWorkday(péntek) → a következő hétfő dátumát adja<br>✓ getNextWorkday(2026-04-06, húsvéthétfő) → 2026-04-07 (kedd, mert hétfő ünnepnap)<br>✓ getNextWorkday(WORKING_SATURDAYS-ban lévő szombat) → munkanapként kezeli (nem ugrik tovább)<br>✓ ELLENŐRZENDŐ státuszú CONFIG sor esetén: logol, de fut tovább (nem áll meg)<br>✓ notifyAdmin() → autobot@ beérkezett levelei közt megjelent a teszt email'),
+
+T('F0-S3a','Fázis 0','Setup.gs',
+  'Setup.gs megírva: createSheetStructure() — 7 fül helyes nevekkel + összes fejléc + dropdown validációk + státusz szerinti conditional formatting (kék/sárga/piros/zöld/lila/szürke/sötétpiros) + guard (meglévő fület nem írja felül)',
+  'Fejlesztő',false,true,false,false,false,null),
+T('F0-S3b','Fázis 0','Setup.gs',
+  'Setup.gs tesztelve staging sheeten: Apps Script → Run createSheetStructure()',
+  'Te',false,false,true,false,false,null,
+  '✓ 7 fül látható helyes nevekkel: BEJÖVŐ_SZÁMLÁK, SZÁMLA_TÉTELEK, PROJEKTEK, PARTNEREK, KÖTEGEK, KIMENŐ_SZÁMLÁK, CONFIG<br>✓ BEJÖVŐ_SZÁMLÁK fejlécek ellenőrzése: A=Számla ID, G=Teljesítés dátuma, H=Fizetési határidő, P=Státusz, Q=Jóváhagyó neve, V=Gmail message ID<br>✓ P oszlop (Státusz) dropdown: "BEÉRKEZETT" → elfogadja; "ROSSZ_ERTEK" → elutasítja<br>✓ K oszlop (Deviza) dropdown: csak HUF/EUR<br>✓ L oszlop (Kategória) dropdown: csak PROJEKT/ÁLLANDÓ<br>✓ Conditional formatting: P oszlopba "JÓVÁHAGYVA" írva → sor zöld; "HIÁNYOS_PO" → sárga; "AI_HIBA" → sötétpiros fehér betűvel<br>✓ PROJEKTEK A oszlop regex: "FCA2601" → elfogad; "fca2601" → elutasít; "IMME261" (7 char) → elutasít<br>✓ SZÁMLA_TÉTELEK K oszlop (PO_CONFIDENCE) numerikus: 50 → elfogad; 101 → elutasít; "szoveg" → elutasít<br>✓ Guard teszt: Setup.gs újra futtatva → nem duplikálja a füleket, hibaüzenet nélkül leáll'),
+T('F0-S3c','Fázis 0','Setup.gs',
+  'Setup.gs élesítve: régi SSOT sheet mentve/archiválva, új éles sheet létrehozva autobot@ fiókból a Shared Drive SSOT/ mappájában',
+  'Te',false,false,false,true,false,null,
+  '✓ Régi sheet HTML exportok megvannak backup-ként<br>✓ Régi sheet átnevezve "[ARCHÍV] Armadillo Pénzügyi Adatbázis"-ra vagy törölve<br>✓ Éles sheet az autobot@ Shared Drive → SSOT/ mappájában van (nem My Drive-ban)<br>✓ Péter és Ági meg tudják nyitni a sheet-et'),
+
+T('F0-S4a','Fázis 0','Validation.gs',
+  'Validation.gs megírva: onEditInstallable() — 4 korai kilépés sorrendben (1. tömeges szerkesztés getNumRows/Cols, 2. rossz fül, 3. rossz oszlop, 4. fejléc sor) + VISSZAUTASÍTVA → partner email + J oszlop FK piros kiemelés + CONFIG hibalog',
+  'Fejlesztő',false,true,false,false,false,null),
+T('F0-S4b','Fázis 0','Validation.gs',
+  'Validation.gs tesztelve staging sheeten: installable onEdit trigger létrehozva autobot@ fiókból',
+  'Te',false,false,true,false,false,null,
+  'Trigger létrehozás: Apps Script → Triggers (⏰ ikon) → + Add Trigger → onEditInstallable → From spreadsheet → On edit → Mentés<br>✓ Staging BEJÖVŐ_SZÁMLÁK P oszlopba egyetlen cellába "VISSZAUTASÍTVA" írva → email érkezett autobot@-ra (TEST_MODE: mindig autobot@-ra megy, nem partnernek)<br>✓ Tömeges teszt: 3 sor kijelölve a P oszlopban → Ctrl+V "VISSZAUTASÍTVA" → NEM küld emailt (getNumRows > 1 kizárja)<br>✓ Más fülre írva (pl. PROJEKTEK) → azonnal return, semmi nem történik<br>✓ SZÁMLA_TÉTELEK J oszlopba nem létező projektszám → cella háttere piros<br>✓ J oszlopba létező projektszám (pl. FCA2601) → nincs piros kiemelés<br>✓ CONFIG fülön hibalog sor keletkezett (timestamp + fül + sor + érték)'),
+
+T('Task 03','Fázis 0','Konfiguráció és adatfeltöltés',
+  'Apps Script projekt neve beállítva ("Armadillo Pénzügyi Bot") + CONFIG fül 6 sora kitöltve: HOLIDAYS_2026, HOLIDAYS_2027, WORKING_SATURDAYS_2026, WORKING_SATURDAYS_2027, PO_CONFIDENCE_THRESHOLD, ADMIN_EMAIL — megfelelő VERIFIED/ELLENŐRZENDŐ státuszokkal',
+  'Te',false,false,false,false,false,null),
+T('Task 04','Fázis 0','Konfiguráció és adatfeltöltés',
+  'PARTNEREK fül feltöltése: 124 partner visszamásolva a HTML exportból az új sheet-be, IBAN (C oszlop) és Kategória (D oszlop: PROJEKT/ÁLLANDÓ) minden aktív sornál ellenőrizve',
+  'Péter',false,false,false,false,false,null),
+T('Task 05','Fázis 0','Konfiguráció és adatfeltöltés',
+  'PROJEKTEK fül feltöltése: 49 projekt visszamásolva, minden projektszám megfelel a ^[A-Z]{3,4}[0-9]{4}$ formátumnak — Setup.gs regex validáció élőben ellenőrzi',
+  'Ági',false,false,false,false,false,null),
+
+// ── FÁZIS 1 ───────────────────────────────────────────────────────────────────
+T('F1-S1a','Fázis 1','GmailDrive.gs',
+  'GmailDrive.gs megírva: processNewInvoices() — Gmail inbox olvasás (in:inbox is:unread has:attachment), PDF mentés Drive-ra ELSŐ lépésként (ha Drive-mentés sikertelen: feldolgozás megáll, email marad unread), hónap-almappa auto-létrehozás, deduplikáció V oszlop (Gmail message ID) alapján',
+  'Fejlesztő',false,true,false,false,false,null),
+T('F1-S1b','Fázis 1','GmailDrive.gs',
+  'GmailDrive.gs tesztelve staging környezetben: kézi futtatással (Apps Script → Run processNewInvoices())',
+  'Te',false,false,true,false,false,null,
+  '✓ Teszt PDF küldve szamlazas@armadillo.hu-ra email csatolmányként<br>✓ Test Drive mappában megjelent a PDF (pl. "Bejövő számlák TEST/2026/04_Április/számla.pdf")<br>✓ Ha a hónap-almappa nem létezett: automatikusan létrejött<br>✓ BEJÖVŐ_SZÁMLÁK V oszlopában Gmail message ID látható az új sorban<br>✓ Duplikáció teszt: ugyanaz az email kézzel újra feldolgoztatva (Run processNewInvoices()) → NEM keletkezett második sor<br>✓ Drive-mentés szimulált hiba (pl. rossz mappa ID Config.gs-ben): email marad unread, konzolban hiba látható'),
+
+T('F1-S2a','Fázis 1','GeminiOCR.gs',
+  'GeminiOCR.gs megírva: callGemini(pdfBase64) — Base64 PDF konverzió, szigorú JSON prompt (fejléc + tételsorok), tétel szintű po/po_confidence/po_reasoning kinyerés, PO_SUMMARY/PO_CONFIDENCE/PO_REASONING aggregálás a kódban (nem Gemini végzi), ÁLLANDÓ category bypass, withRetry(fn,3,30000) wrapper',
+  'Fejlesztő',false,true,false,false,false,null),
+T('F1-S2b','Fázis 1','GeminiOCR.gs',
+  'GeminiOCR.gs tesztelve: testGeminiOCR() futtatva ismert tartalmú teszt PDF-fel',
+  'Te',false,false,true,false,false,null,
+  '✓ Gemini válasz érkezett és valid JSON (nem null, nem üres, parseable)<br>✓ Minden tételsorhoz megvan: po (string), po_confidence (0–100 szám), po_reasoning (szöveg)<br>✓ Egyetlen PO azonosítva → PO_SUMMARY = konkrét PO érték, aggregált PO_CONFIDENCE = az adott tétel értéke<br>✓ Több különböző PO a tételekben → PO_SUMMARY = "MULTI", PO_CONFIDENCE = MIN(tételek conf.)<br>✓ Legalább 1 tétel nem azonosítható → PO_SUMMARY = "HIÁNYOS", PO_CONFIDENCE = 0, PO_REASONING = "NINCS_PO"<br>✓ ÁLLANDÓ kategóriájú partner számlája → PO_SUMMARY = "N/A", PO ellenőrzés teljesen kihagyva<br>✓ Gemini key szimuláltan hibás (rossz key beállítva) → withRetry 3× próbál, majd AI_HIBA státusz, notifyAdmin() email megérkezett'),
+
+T('F1-S3a','Fázis 1','SheetWriter.gs',
+  'SheetWriter.gs megírva: writeInvoice(data) — LockService.getScriptLock() tranzakcióban BEJÖVŐ_SZÁMLÁK appendRow + SZÁMLA_TÉTELEK appendRow atomikusan, PO_VALIDÁLT kiszámítása soronként (J∈PROJEKTEK.A AND K≥95 → IGEN), önfejlesztő adatbázis: partner adószám visszaírás PARTNEREK B oszlopba ha üres volt + audit log CONFIG fülre',
+  'Fejlesztő',false,true,false,false,false,null),
+T('F1-S3b','Fázis 1','SheetWriter.gs',
+  'SheetWriter.gs tesztelve staging sheeten: teljes számla adat (fejléc + tételek) átadva writeInvoice()-nak',
+  'Te',false,false,true,false,false,null,
+  '✓ BEJÖVŐ_SZÁMLÁK-ban új sor keletkezett: N=PO_SUMMARY helyes érték, O=aggregált PO_CONFIDENCE szám, P=aggregált PO_REASONING, Q=Státusz (BEÉRKEZETT vagy HIÁNYOS_PO)<br>✓ SZÁMLA_TÉTELEK-ben tételsorok: J=projektszám, K=po_confidence, L=po_reasoning, M=PO_VALIDÁLT (IGEN/NEM)<br>✓ PO_VALIDÁLT=IGEN feltétel: J∈PROJEKTEK.A ÉS K≥95 — mindkét feltétel egyszerre kell<br>✓ PO_VALIDÁLT=NEM: ha J nincs a PROJEKTEK-ben VAGY K<95 (akár 94)<br>✓ Önfejlesztő teszt: partner adószáma üres a PARTNEREK-ben, de a számla tartalmaz adószámot → PARTNEREK B oszlop frissült, CONFIG fülön audit log sor: "Adószám visszatöltve: [partner neve] → [adószám] @ [timestamp]"<br>✓ Lock timeout szimulálva: ha lock nem szerezhető 10 mp-en belül → LOCK_TIMEOUT státusz, BEJÖVŐ_SZÁMLÁK-ban nincs félig beírt sor'),
+
+T('F1-S4a','Fázis 1','ChatNotifier.gs',
+  'ChatNotifier.gs megírva: sendToOps(), sendToFinance(), sendToAdmin() — 3 különálló webhook, HIÁNYOS_PO tétel-szintű payload formázás (sor N: "leírás" → PO: X | Conf: Y% | reasoning), Gmail fallback ha webhook hiba, TEST_MODE=true → minden üzenet Admin webhook-ra megy',
+  'Fejlesztő',false,true,false,false,false,null),
+T('F1-S4b','Fázis 1','ChatNotifier.gs',
+  'ChatNotifier.gs tesztelve: testChatNotifier() futtatva',
+  'Te',false,false,true,false,false,null,
+  '✓ TEST_MODE=true: minden üzenet az Admin Chat space-be érkezett (NEM az OPS vagy Finance space-be)<br>✓ Teszt HIÁNYOS_PO payload formátum ellenőrzése a kapott üzenetben:<br>&nbsp;&nbsp;⚠️ HIÁNYOS_PO: [Szállító neve] — [Összeg]<br>&nbsp;&nbsp;&nbsp;&nbsp;sor 1: "Tétel leírás" → PO: FCA2601 | Conf: 42% | Nem azonosítható<br>✓ Webhook hiba szimulálva (rossz URL beírva Config.gs-be): Gmail fallback küldött emailt autobot@-ra<br>✓ TEST_MODE=false beállítva: OPS webhook-ra megy az OPS üzenet, Finance-ra a Finance üzenet — ellenőrizni mindkét Chat space-ben'),
+
+T('Task 11','Fázis 1','Integráció és élesítés',
+  '15 perces time-driven trigger létrehozva autobot@ fiókból: Apps Script → Triggers (⏰) → + Add Trigger → processNewInvoices → Time-driven → Minutes timer → Every 15 minutes',
+  'Te',false,false,false,true,false,null,
+  '✓ Trigger látható az autobot@ fiók Triggers listájában<br>✓ Apps Script → Executions nézetben 15 percen belül sikeres futás megjelenik'),
+T('Task 12','Fázis 1','Integráció és élesítés',
+  'Teljes pipeline end-to-end teszt staging-en: GmailDrive → GeminiOCR → SheetWriter → ChatNotifier egyetlen processNewInvoices() futtatásban, teszt PDF-fel',
+  'Fejlesztő',false,false,true,false,false,null,
+  '✓ PDF test Drive-on megjelent ✓ BEJÖVŐ_SZÁMLÁK sor keletkezett N/O/P/Q kitöltve ✓ SZÁMLA_TÉTELEK K/L/M kitöltve ✓ Admin Chat (TEST_MODE) üzenet érkezett<br>✓ Apps Script Executions nézetben nincs piros hiba sor'),
+T('Task 13','Fázis 1','Integráció és élesítés',
+  'TEST_MODE=false beállítva Config.gs-ben, éles SSOT sheet ID + éles Drive mappa ID-k beírva, 15 perces trigger éles konfiggal fut',
+  'Te',false,false,false,true,false,null),
+T('Task 14','Fázis 1','Integráció és élesítés',
+  'Éles tesztszámla: valós PDF küldve szamlazas@armadillo.hu-ra — 15 percen belül minden pont teljesül',
+  'Mindenki',false,false,true,false,false,null,
+  '✓ PDF megjelent az éles Drive helyes hónap-mappájában<br>✓ BEJÖVŐ_SZÁMLÁK: N=PO_SUMMARY értékes adat, O=szám 0–100 között, P=szöveges reasoning<br>✓ SZÁMLA_TÉTELEK: minden tételsorhoz K/L/M kitöltve, M értéke IGEN vagy NEM (nem üres)<br>✓ Státusz (Q): BEÉRKEZETT vagy HIÁNYOS_PO — logikus a PO_CONFIDENCE értéke alapján<br>✓ V oszlop: Gmail message ID mentve<br>✓ OPS vagy Finance Chat space-ben üzenet érkezett (TEST_MODE=false után)<br>✓ Duplikáció teszt: ugyanaz az email újraküldve → nem keletkezett második sor'),
+
+// ── FÁZIS 2 ───────────────────────────────────────────────────────────────────
+T('Task 21','Fázis 2','HIÁNYOS_PO logika validálása',
+  'HIÁNYOS_PO routing és ÁLLANDÓ bypass staging-en részletesen tesztelve (logika Fázis 1 scriptekben implementálva, itt végleges validálás)',
+  'Fejlesztő',false,false,true,false,false,null,
+  '✓ ÁLLANDÓ kategóriájú számla: PO_SUMMARY=N/A, Q=BEÉRKEZETT — SOHA nem HIÁNYOS_PO<br>✓ PROJEKT + minden tétel PO_VALIDÁLT=IGEN → BEÉRKEZETT<br>✓ PROJEKT + 1 tétel PO_VALIDÁLT=NEM (conf=94, tehát <95) → HIÁNYOS_PO<br>✓ PROJEKT + 1 tétel nem szerepel PROJEKTEK-ben → HIÁNYOS_PO<br>✓ Az ÁLLANDÓ bypass az első ág — ha M=ÁLLANDÓ, a PROJEKT logika le sem fut'),
+T('Task 22','Fázis 2','Visszautasító email sablon (Ági)',
+  'Visszautasító email sablon szövege megírva és fejlesztőnek átadva: mi hiányzott, hogyan küldjék újra helyesen, kivel vegyék fel a kapcsolatot — változók {SZÁLLÍTÓ_NEVE}, {SZÁMLA_SZÁMA} formában jelölve',
+  'Ági',false,false,false,false,false,null),
+T('Task 23','Fázis 2','Visszautasító email sablon (Ági)',
+  'Validation.gs bővítve: Ági sablonszövege beégetve, VISSZAUTASÍTVA → partnernek email küldés élesítve, Chat webhook fallback Gmail-re tesztelve',
+  'Fejlesztő',false,true,false,false,false,null),
+T('Task 24','Fázis 2','Visszautasítás teszt (Ági + Fejlesztő)',
+  'Visszautasítás end-to-end teszt: HIÁNYOS_PO státuszú staging sor P oszlopa kézzel VISSZAUTASÍTVA-ra állítva',
+  'Ági + Fejlesztő',false,false,true,false,false,null,
+  '✓ Email megérkezett a partner email-jére (tesztnél saját email is megfelel)<br>✓ Sablon szöveg helyes, {SZÁLLÍTÓ_NEVE} és {SZÁMLA_SZÁMA} be van helyettesítve<br>✓ Partner email a PARTNEREK fülről jön (E oszlop) — nem hardcode-olt<br>✓ AI_HIBA szimuláció (Gemini key szimuláltan rossz): AI_HIBA státusz megjelent, admin email megérkezett autobot@-ra<br>✓ Chat webhook szimuláltan hibás: Gmail fallback aktiválódott, autobot@-ra megérkezett'),
+
+// ── FÁZIS 3 ───────────────────────────────────────────────────────────────────
+T('F3-S1a','Fázis 3','WednesdayWorkflow.gs',
+  'WednesdayWorkflow.gs megírva: sendWednesdayDigest() — BEÉRKEZETT+HIÁNYOS_PO lekérdezés, PROJEKT→OPS webhook, ÁLLANDÓ→Finance webhook, HIÁNYOS_PO tétel-szintű payload, 7 napon belül lejáró kiemelés; runBatchTrigger() — JÓVÁHAGYVA számlák összegyűjtése, devizánként csoportosítás, BatchGenerator hívás',
+  'Fejlesztő',false,true,false,false,false,null),
+T('F3-S1b','Fázis 3','WednesdayWorkflow.gs',
+  'WednesdayWorkflow.gs tesztelve: testWednesdayDigest() kézzel futtatva staging sheeten (előtte BEÉRKEZETT és HIÁNYOS_PO státuszú teszt sorok felvitele)',
+  'Te',false,false,true,false,false,null,
+  '✓ TEST_MODE-ban Admin Chat-en digest üzenet megérkezett<br>✓ PROJEKT kategória tételek → OPS szekció szerepel az üzenetben (Ági+Márk számára)<br>✓ ÁLLANDÓ kategória tételek → Finance szekció szerepel (Péter számára)<br>✓ HIÁNYOS_PO tételek tétel-szintű bontással a digest-ben (sor 1: "leírás" → PO: X | Conf: Y% | reasoning)<br>✓ Fizetési határidő < 7 nap: tétel kiemelten jelenik meg<br>✓ runBatchTrigger(): teszt JÓVÁHAGYVA sor → BatchGenerator meghívódik'),
+
+T('F3-S2a','Fázis 3','BatchGenerator.gs',
+  'BatchGenerator.gs megírva: generateHUFBatch() — CS-ÁTUTALÁS fix szélességű TXT: 01 FEJ (174 char) + 02 TÉTEL (249 char) soronként + 03 LÁB (24 char), T213 Math.round() egész forint, T219 közlemény 70 char (18 effektív), ASCII transzliteráció (á→a stb.), getNextWorkday() utalás dátum, KÖTEGEK fül sor, érintett számlák → BEKÖTEGELT, EUR stub',
+  'Fejlesztő',false,true,false,false,false,null),
+T('F3-S2b','Fázis 3','BatchGenerator.gs',
+  'BatchGenerator.gs tesztelve: testBatchGeneration() futtatva staging sheeten JÓVÁHAGYVA státuszú teszt sorokkal',
+  'Te',false,false,true,false,false,null,
+  '✓ .txt fájl megjelent a test Kötegek mappában (fájlnév: BATCH-2026-W{hét}-HUF_{dátum}.txt)<br>✓ Sorhossz ellenőrzés — minden sort karakterszámláló szerkesztővel (pl. VS Code) kell mérni:<br>&nbsp;&nbsp;— 01 FEJ sor: pontosan 174 karakter<br>&nbsp;&nbsp;— 02 TÉTEL sorok: pontosan 249 karakter<br>&nbsp;&nbsp;— 03 LÁB sor: pontosan 24 karakter<br>✓ T213 összeg: egész forint, nincs tizedes pont és nincs pont-elválasztó (pl. 125000, nem 125.000 és nem 125000.00)<br>✓ T219 közlemény: max 18 karakter hatékony tartalom beírva (a mezőbe 70 fér, de csak 18 jut el a bankon át)<br>✓ ASCII: ékezetes szöveg transzliterálva (pl. "Körforgás" → "Korforgás" vagy "Korforgasas")<br>✓ KÖTEGEK fülön új sor keletkezett: Köteg ID, generálás dátuma, utalás dátuma (következő munkanapon), összeg, Drive link<br>✓ Érintett BEJÖVŐ_SZÁMLÁK sorok: Q oszlop → BEKÖTEGELT státusz<br>✓ getNextWorkday(): pénteki futtatásnál hétfői utalás dátum jelenik meg a fájlban'),
+
+T('P11','Fázis 3','MagNet kódolás teszt (Fejlesztő + Péter)',
+  'IBM 852 ASCII kódolás teszt: Fejlesztő generál 1 tételes ASCII-only tesztfájlt (ékezet nélküli cégnév + közlemény, 1 Ft összeg), Péter feltölti MagNet-be belső számlára',
+  'Fejlesztő + Péter',true,false,true,false,false,null,
+  'MagNet NetBank → Kötegek → Köteg rögzítés → Csoportos átutalás → Állomány feltöltése<br>Ha importálható: ✓ ASCII stratégia végleges — kódolás kérdés lezárva, nem kell IBM 852 konverzió<br>Ha hibát jelez: Péter visszajelzi a fejlesztőnek: melyik mező, milyen hibaüzenet, hányadik sor — IBM 852 konverziós függvény szükséges (külön task)'),
+T('P10','Fázis 3','MagNet kódolás teszt (Fejlesztő + Péter)',
+  'SEPA kötegállomány formátum bekérése MagNet-ből (EUR ághoz) — elhalasztható ha nincs aktív EUR partner',
+  'Péter',false,false,false,false,false,null),
+
+T('Task 31','Fázis 3','Triggerek és élesítés',
+  'Szerda 9:00 + 14:00 time-driven triggerek létrehozva autobot@ fiókból: sendWednesdayDigest (sze reggel 8–9 között) + runBatchTrigger (sze 14–15 között)',
+  'Te',false,false,false,true,false,null,
+  '✓ Mindkét trigger látható az autobot@ fiók Triggers listájában'),
+T('Task 32','Fázis 3','Triggerek és élesítés',
+  '+3 napos napi ellenőrző trigger implementálva és tesztelve: BEKÖTEGELT státuszú tételek ahol utalás dátuma >3 napja múlt és státusz nem TELJESÍTVE → Finance Chat (TEST_MODE-ban Admin Chat) figyelmeztetés',
+  'Fejlesztő',false,true,true,false,false,null,
+  '✓ Staging sheeten BEKÖTEGELT sor, utalás dátuma 4 napja → Chat figyelmeztetés megérkezett'),
+T('Task 33','Fázis 3','MagNet NetBank éles teszt (Péter)',
+  'MagNet NetBank teszt import: generált .txt kötegállomány letöltve Drive-ról, MagNet-be feltöltve — importálható hiba nélkül',
+  'Péter',false,false,true,false,false,null,
+  'MagNet NetBank → Kötegek → Köteg rögzítés → Csoportos átutalás → Állomány feltöltése<br>✓ Importálható hiba nélkül<br>⚠️ FONTOS: összeg jóváhagyás ELŐTT visszavonni — ez csak import teszt, nem utalás<br>Ha hibát jelez: visszajelzés a fejlesztőnek (melyik sor, milyen hibaüzenet, screenshot)'),
+
+// ── FÁZIS 4 ───────────────────────────────────────────────────────────────────
+T('Task 41','Fázis 4','Looker Studio (Fejlesztő)',
+  'Adatforrás #1: BEJÖVŐ_SZÁMLÁK csatlakoztatva (dátumok DATE típus, összegek NUMBER típus, frissítés: Every 4 hours) + Adatforrás #2: SZÁMLA_TÉTELEK csatlakoztatva + Data Blend: Left Outer Join, kulcs: Számla ID',
+  'Fejlesztő',false,false,false,false,false,null,
+  '✓ Data Blend nem duplikál és nem hagy el sort — néhány sorban kézzel ellenőrizve'),
+T('Task 42','Fázis 4','Looker Studio (Fejlesztő)',
+  '5 dashboard oldal valós adattal: 1.Főoldal (státuszok, lejárók) · 2.Cash flow (következő 30 nap bar chart, deviza szűrő) · 3.ÁFA (teljesítési dátum! — NEM fizetési határidő) · 4.Kintlévőség (KIMENŐ_SZÁMLÁK NYITOTT+KÉSEDELMES) · 5.Lejárt tételek (1–15/16–30/31–60/60+ nap bucket-ek)',
+  'Fejlesztő',false,false,false,false,false,null),
+T('Task 43','Fázis 4','Dashboard review (Péter + Ági)',
+  'Dashboard review: adatok egyeznek a Sheet-ben látottakkal? Visszajelzés 3 munkanapon belül — ha nincs visszajelzés, automatikusan lezártnak tekintjük',
+  'Péter + Ági',false,false,true,false,false,null,
+  '✓ ÁFA oldal valóban teljesítési dátum szerint számol (nem fizetési határidő) — ezt számlánként keresztellenőrizni 2-3 sorban<br>✓ Cash flow: deviza szűrő (HUF/EUR külön) működik, 30 napos ablak helyes<br>✓ Lejárt tételek bucket-ek: 1–15 / 16–30 / 31–60 / 60+ nap helyes csoportosítás'),
+
+// ── FÁZIS 5 ───────────────────────────────────────────────────────────────────
+T('F5-S1a','Fázis 5','Triggers.gs',
+  'Triggers.gs megírva: setupAllTriggers() — összes trigger regisztrálása és teardown (15 perc processNewInvoices, szerda 9:00 digest, szerda 14:00 batch, napi +3nap ellenőrzés, január 1. 08:00 holidays cache, december 1. 09:00 WORKING_SATURDAYS emlékeztető) + refreshHolidaysCache() (Nager.Date API) + remindWorkingSaturdays()',
+  'Fejlesztő',false,true,false,false,false,null),
+T('F5-S1b','Fázis 5','Triggers.gs',
+  'Triggers.gs tesztelve: setupAllTriggers() futtatva autobot@ fiókból',
+  'Te',false,false,true,false,false,null,
+  '✓ Apps Script → Triggers listában 6 trigger látható, mind az autobot@ fiókhoz kötve (nem személyes fiók!)<br>✓ refreshHolidaysCache() kézzel futtatva → CONFIG fülön HOLIDAYS_{következő év} sor keletkezett ELLENŐRZENDŐ státusszal + Admin Chat üzenet érkezett: "Ellenőrizd és állítsd VERIFIED-re"<br>✓ remindWorkingSaturdays() kézzel futtatva → Admin + Finance Chat space-ben üzenet érkezett a WORKING_SATURDAYS kitöltési emlékeztetőről<br>✓ Nager.Date API hívás sikeres: érvényes JSON válasz érkezett az ünnepnapokkal (UrlFetchApp.fetch() nem dob hibát)'),
+
+T('Task 51','Fázis 5','Élesítési ellenőrzőlista',
+  'Fazis5_Playbook.md élesítési ellenőrzőlista 100%-on végigpipálva: minden folder ID kitöltve, 3 webhook URL kitöltve, Gemini key nem null, PARTNEREK IBAN-ok ellenőrizve, PROJEKTEK formátumok helyesek',
+  'Fejlesztő',false,false,false,false,false,null),
+T('Task 52','Fázis 5','Élesítési ellenőrzőlista',
+  'WORKING_SATURDAYS_2026 ellenőrizve Magyar Közlöny alapján → CONFIG fülön státusz: VERIFIED — KÖTELEZŐ élesítés előtt! Téves dátum kifizetési késedelmet és jogi kockázatot jelent.',
+  'Péter / IT',true,false,false,false,false,null),
+T('Task 53','Fázis 5','Élesítési ellenőrzőlista',
+  'TEST_MODE=false véglegesítve Config.gs-ben, éles SSOT sheet ID + éles Drive mappa ID-k beírva, staging adatok nem látszanak az éles sheet-ben',
+  'Te',false,false,false,true,false,null),
+T('Task 54','Fázis 5','Élesítési ellenőrzőlista',
+  'Első éles szerdai workflow sikeresen lefutott: 9:00 OPS+Finance digest megérkezett + 14:00 batch generálódott és Péter MagNet-be feltöltötte éles adattal — RENDSZER ÉLES ✅',
+  'Mindenki',false,false,true,false,false,null,
+  '✓ Szerda 9:00: OPS Chat-en PROJEKT számlák digestje megérkezett ✓, Finance Chat-en ÁLLANDÓ számlák digestje megérkezett ✓<br>✓ Szerda 14:00: BATCH-*.txt megjelent a Kötegek/2026/ mappában, Finance Chat-en Drive link megérkezett Péternek<br>✓ Péter megerősíti: a fájl feltölthető volt MagNet-be éles adattal és az összegek helyesek<br>✓ Fejlesztő elérhető volt az első szerdán — ha volt hiba, azonnali javítás megtörtént'),
+];
+
+createApp({
+    data() { return { tasks:[], activePhase:'PRE-0', phases:PHASES }; },
+    computed: {
+        overallCompleted() { return this.tasks.filter(t=>t.done).length; },
+        overallProgress() { return !this.tasks.length ? 0 : Math.round(this.overallCompleted/this.tasks.length*100); },
+        activePhaseData() { return this.phases.find(p=>p.id===this.activePhase)||this.phases[0]; },
+        currentPhaseTasks() { return this.tasks.filter(t=>t.phase===this.activePhase); },
+        currentPhaseGroups() {
+            const seen=new Set(), groups=[];
+            this.currentPhaseTasks.forEach(t=>{ if(!seen.has(t.group)){seen.add(t.group);groups.push(t.group);} });
+            return groups;
+        },
+    },
+    methods: {
+        getPhaseCompleted(id) { return this.tasks.filter(t=>t.phase===id&&t.done).length; },
+        getPhaseTotal(id) { return this.tasks.filter(t=>t.phase===id).length; },
+        getPhaseProgress(id) { const n=this.getPhaseTotal(id); return n?Math.round(this.getPhaseCompleted(id)/n*100):0; },
+        isPhaseBlocked(phaseId) {
+            const phase=this.phases.find(p=>p.id===phaseId); if(!phase) return false;
+            for(const tid of phase.prerequisiteTaskIds){ const t=this.tasks.find(t=>t.id===tid); if(t&&!t.done) return true; }
+            for(const rp of phase.prerequisitePhases){ if(this.getPhaseProgress(rp)<100) return true; }
+            return false;
+        },
+        getMissingPrerequisites(phaseId) {
+            const phase=this.phases.find(p=>p.id===phaseId); if(!phase) return [];
+            const missing=[];
+            for(const tid of phase.prerequisiteTaskIds){ const t=this.tasks.find(t=>t.id===tid); if(t&&!t.done) missing.push(`${tid} — ${t.title} (${t.owner})`); }
+            for(const rp of phase.prerequisitePhases){ const prog=this.getPhaseProgress(rp); if(prog<100) missing.push(`${rp} nincs lezárva (${prog}% kész)`); }
+            return missing;
+        },
+        getTasksByGroup(group) { return this.currentPhaseTasks.filter(t=>t.group===group); },
+        getOwnerClass(owner) { return OWNER_CLASSES[owner]||'bg-slate-100 text-slate-600 border-slate-200'; },
+        toggleTask(task) { task.timestamp=task.done?new Date().toLocaleString('hu-HU'):null; this.saveData(); },
+        saveData() { localStorage.setItem('armadilloTrackerV4',JSON.stringify(this.tasks)); },
+        loadData() { const s=localStorage.getItem('armadilloTrackerV4'); this.tasks=s?JSON.parse(s):JSON.parse(JSON.stringify(initialTasks)); },
+        resetData() { if(confirm('Biztosan törlöd az összes pipát?')){ localStorage.removeItem('armadilloTrackerV4'); this.tasks=JSON.parse(JSON.stringify(initialTasks)); } },
+        exportLog() {
+            const sep='═'.repeat(70), line='─'.repeat(70);
+            let log=`ARMADILLO PÉNZÜGYI AUTOMATIZÁCIÓ — AUDIT LOG\n${sep}\nGenerálva: ${new Date().toLocaleString('hu-HU')}\nHaladás: ${this.overallProgress}% (${this.overallCompleted}/${this.tasks.length})\n`;
+            for(const phase of this.phases){
+                const pTasks=this.tasks.filter(t=>t.phase===phase.id);
+                log+=`\n${sep}\n${phase.fullTitle} — ${this.getPhaseProgress(phase.id)}% (${this.getPhaseCompleted(phase.id)}/${this.getPhaseTotal(phase.id)})\n${line}\n`;
+                let lastGroup='';
+                for(const t of pTasks){
+                    if(t.group!==lastGroup){log+=`\n  [${t.group}]\n`;lastGroup=t.group;}
+                    const flags=[t.isBlocker?'⚡BLOKKOLÓ':'',t.isScript?'💻Kód':'',t.isTest?'🧪Teszt':'',t.isDeploy?'🚀Élesítés':''].filter(Boolean).join(' ');
+                    log+=`  ${t.done?'[✓] KÉSZ    ':'[ ] FOLYAMATBAN'} | ${t.id.padEnd(10)} | ${t.owner.padEnd(18)} | ${t.title.substring(0,55)}${t.title.length>55?'...':''} ${flags}\n`;
+                    if(t.done) log+=`               ✓ Befejezve: ${t.timestamp}\n`;
+                }
+            }
+            const blob=new Blob([log],{type:'text/plain;charset=utf-8'});
+            const url=URL.createObjectURL(blob), a=document.createElement('a');
+            a.href=url; a.download=`armadillo_audit_${new Date().toISOString().slice(0,10)}.txt`; a.click(); URL.revokeObjectURL(url);
+        },
+    },
+    mounted() { this.loadData(); },
+}).mount('#app');
+</script>
+</body>
+</html>

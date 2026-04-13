@@ -1,0 +1,140 @@
+A kód struktúrát az előző olvasásból már egyértelműen láttuk. Most összefoglalom a teljes review-t.
+---
+Show less
+# 3. Review-kör — Armadillo Finance v4 — Teljes kódminőségi audit
+## I. Korábbi javítások ellenőrzése (✅/❌ lista)
+| # | Javítás | Státusz | Megjegyzés |
+|---|---------|---------|------------|
+| 1 | `CONFIG.COLS.PARTNER` blokk létezik (Config.gs) | ✅ | L208–217, 8 mező, helyes sorrend |
+| 2 | `loadValidProjects()` megosztott cache (Utils.gs) | ✅ | GeminiOCR, SheetWriter, Validation mind hívja |
+| 3 | `_getConfigSetFromData_` / `_getConfigStatusFromData_` léteznek (Utils.gs) | ✅ | L182–205 |
+| 4 | `getNextWorkday()` futásonkénti cache (`_configCache`) | ✅ | L77–81 |
+| 5 | `_getConfigSet_` / `_getConfigStatus_` @deprecated jelöléssel delegálnak | ✅ | L143–173 |
+| 6 | `_aggregatePO_`: MEGOSZTOTT is N/A bypass-t kap | ✅ | L353–354 |
+| 7 | `wednesdayMorningDigest` + `wednesdayAfternoonBatch`: claim-before-work lock minta | ✅ | L44–54, L87–100 |
+| 8 | `runDigestNow()` TEST_MODE guard | ✅ | L369–371 |
+| 9 | `_buildBankMap_`: adószám normalizálás `replace(/[^0-9]/g,'')` | ✅ | L353 |
+| 10 | KÖTEGEK initial státusz `'NYITOTT'` | ✅ | BatchGenerator.gs L319 |
+| 11 | `notifyStatusChange()` visszautasítasOka paraméter + Chat üzenetben megjelenik | ✅ | ChatNotifier.gs L92, L116 |
+| 12 | `_isProjektszamValid_` `loadValidProjects()`-t hívja | ✅ | Validation.gs L307 |
+| 13 | TestSetup.gs: `LAST_BATCH_DATE` hozzáadva, A2:C10 range | ✅ | L115–125, 9 adatsor |
+| 14 | `_getHungarianMonthFolder_` eltávolítva TestSetup.gs-ből | ✅ | L168 comment |
+| 15 | `_decemberReminder_`: chatMsg vs emailMsg szétválasztva | ✅ | Triggers.gs L184–205 |
+| 16 | `var` → `let`/`const` (BatchGenerator.gs, Triggers.gs) | ✅ | Egyik fájlban sem maradt `var` |
+| 17 | `writeInvoiceToSheet` JSDoc egységesítve | ✅ | SheetWriter.gs L18–27 |
+| 18 | `DRIVE_ERROR` → `errors++` (GmailDrive.gs) | ❌ | **SZINTAKTIKAI HIBA — ld. KRI-01** |
+---
+## II. KRITIKUS hibák
+### KRI-01: GmailDrive.gs — DRIVE_ERROR ág szintaktikailag UNREACHABLE (parse error)
+**Fájl:** `GmailDrive.gs`, sor 72–82
+A MI-06 javítás során a `} else if (result === 'DRIVE_ERROR') {` ág a `try` blokkon **kívülre** került. A kód struktúrája:
+```javascript
+try {
+  const result = _processMessage_(...);
+  if (result === 'NO_PDF') {
+    ...
+    skipped++;
+  } else if (result === 'OK') {
+    ...
+    processed++;
+  }          // ← ez a } lezárja az if-et ÉS a try blokkot
+  } else if (result === 'DRIVE_ERROR') {   // ← Ez a } a try után van: szintaktikai hiba
+    errors++;
+} catch (err) {
+```
+A Google Apps Script V8 runtime **futásidőben `SyntaxError`-t dob** ezen a fájlon. Az egész `processNewInvoices()` funkció — és ezzel az összes Gmail feldolgozás — **nem fut le**. Ez a rendszer elsődleges belépési pontját töri el.
+**Javítás:** A `}` zárójelet a `processed++;` sor után egy sorral beljebb kell helyezni, hogy az `else if (result === 'DRIVE_ERROR')` a `try` blokkon belül maradjon:
+```javascript
+try {
+  const result = _processMessage_(message, processedIds);
+  if (result === 'NO_PDF') {
+    message.markRead();
+    console.log('Kihagyva (nincs PDF): ' + msgId + ' | ' + message.getSubject());
+    skipped++;
+  } else if (result === 'OK') {
+    message.markRead();
+    processedIds.add(msgId);
+    processed++;
+  } else if (result === 'DRIVE_ERROR') {
+    errors++;
+    console.warn('Drive mentés sikertelen, retry következő körben: ' + msgId);
+  }
+} catch (err) {
+```
+---
+## III. KÖZEPES hibák
+### KOZ-01: SheetWriter.gs — `_computePoValidalt_` nem adja a MEGOSZTOTT kategóriának N/A értéket
+**Fájl:** `SheetWriter.gs`, sor 198–209
+A `_aggregatePO_()` (GeminiOCR.gs) helyesen ad `N/A` summary-t MEGOSZTOTT partnernél, és a `_decideStatusz_()` is helyesen adja `BEÉRKEZETT` státuszt, ha a `poSummary === 'N/A'`. Azonban a `_computePoValidalt_()` függvény csak `ÁLLANDÓ` kategóriára adja a `N/A` értéket:
+```javascript
+function _computePoValidalt_(tetel, kategoria, validProjects) {
+  if (kategoria === CONFIG.KATEGORIAK.ALLANDO) return 'N/A';  // MEGOSZTOTT hiányzik!
+  ...
+  if (!po) return 'NEM';
+```
+MEGOSZTOTT számlák tételeinél az M oszlopba `'NEM'` kerül, annak ellenére, hogy a fejlécsor `BEÉRKEZETT` státuszt kap. Ez inkonzisztens SSOT állapotot okoz: a BEJÖVŐ_SZÁMLÁK sor OK, de a SZÁMLA_TÉTELEK M oszlopa félrevezető `NEM` értékeket tartalmaz.
+**Javítás:**
+```javascript
+function _computePoValidalt_(tetel, kategoria, validProjects) {
+  if (kategoria === CONFIG.KATEGORIAK.ALLANDO ||
+      kategoria === CONFIG.KATEGORIAK.MEGOSZTOTT) return 'N/A';
+  ...
+```
+### KOZ-02: Validation.gs — `_validateTetelRow_` nem ismeri a kategóriát, MEGOSZTOTT tételeken false-positive hibát jelez
+**Fájl:** `Validation.gs`, sor 125–189
+Az `onEditInstallable` trigger által meghívott `_validateTetelRow_()` nem kap `kategoria` paramétert — a SZÁMLA_TÉTELEK fülön nincs is ilyen oszlop. Ha Ági manuálisan szerkeszt egy MEGOSZTOTT számla tételsorát (pl. leírást javít), az M oszlop `'NEM'`-re áll, holott a számla BEÉRKEZETT/JÓVÁHAGYVA státuszú. Ez az `onEdit` triggerből nem orvosolható teljesen, de legalább a JSDoc-ban dokumentálni kell ezt a korlátot. A `validateAllTetelek()` batch-validáció sem veszi figyelembe a kategóriát.
+**Javítás iránya:** A SZÁMLA_TÉTELEK fülhöz hozzá lehetne adni egy rejtett kategória oszlopot (N=14), amit a SheetWriter kitölt, és a Validation is olvashat. Alternatíva: a SZAMLA_ID alapján visszaolvasni a BEJÖVŐ_SZÁMLÁK kategóriáját — de ez extra sheet API hívás. Minimum: JSDoc/comment a korlátról.
+### KOZ-03: ChatNotifier.gs — Fejléc komment elavult `notifyStatusChange` szignatúrával
+**Fájl:** `ChatNotifier.gs`, sor 12
+```javascript
+ *   notifyStatusChange(szamlaId, szallitoNev, regi, uj, jovahagyoNev)
+```
+A tényleges szignatúra 8 paraméteres: `(szamlaId, szallitoNev, osszeg, deviza, regiStatusz, ujStatusz, jovahagyoNev, visszautasitasOka)`. A fejléc komment 5 paramétert mutat — félrevezeti a jövőbeni fejlesztőt.
+---
+## IV. MINOR hibák
+### MIN-01: GmailDrive.gs — `_sanitizeFilename_` felesleges `.substring(0, 50)` dead code
+**Fájl:** `GmailDrive.gs`, L289–295
+A kód saját megjegyzése is jelzi (`MIN-04` comment), hogy a `.substring(0, 50)` soha nem aktiválódik, mert a hívó már 30 karakterre vágja. A comment dokumentálja, de a dead code benn maradt. Minimálisan zavaró, de eltávolítható.
+### MIN-02: TestSetup.gs — `monthName` után hiányzó pontosvessző (nem hiba, de stílussértés)
+**Fájl:** `TestSetup.gs`, sor 36
+```javascript
+const monthName = hungarianMonth(now) // MI-03: Utils.gs...
+```
+Hiányzik a `;` a sor végén. A JS ASI (Automatic Semicolon Insertion) megoldja futásidőben, de következetlen stílus.
+### MIN-03: Setup.gs — `addTestPartners()` duplikál a TestSetup.gs-sel
+**Fájl:** `Setup.gs`, L497–529
+A `addTestPartners()` a "Megosztott Irodaház Kft." partnert adja hozzá, de a TestSetup.gs `_createStagingSheet_()` már tartalmaz egy identikus nevű `Megosztott Irodaház Kft.` partnert (L142). Az `addTestPartners()` ugyan ellenőriz nevet (`existingNames.indexOf`), de az adószám eltér (`'22222222-2'` vs `'33333333-2-41'`), és a bankszámlaszám is más (`'11111111-22222222-33333333'` vs `'77777777-88888888-99999999'`). Ha mindkét függvény fut, két különböző adatsorú MEGOSZTOTT partner kerül a PARTNEREK fülre — az `_getPartnerKategoria_()` adószám-alapú lookup determinisztikus, de az `addTestPartners()` által beírt `'22222222-2'` adószám nem normalizált formájú (hiányzik a teljes 11 karakteres alak), míg a GeminiOCR `replace(/[^0-9]/g,'')` normalizál.
+### MIN-04: Validation.gs — `_validateTetelRow_` — `valid` változó deklarálva de soha nem használva
+**Fájl:** `Validation.gs`, sor 131
+```javascript
+let valid = true;
+```
+A `valid` változó értéke soha nincs olvasva — a függvény nem tér vissza `valid`-dal, és semmilyen elágazásnál sem használja. Ez dead code / nyitott refactor szál.
+### MIN-05: Triggers.gs — `_ensureTimeTrigger_` — ha `type` ismeretlen érték, a trigger létrejön de beállítás nélkül
+**Fájl:** `Triggers.gs`, sor 100–113
+Ha egy ismeretlen `type` értékkel hívják, a `builder` lánc csak `ScriptApp.newTrigger(fnName).timeBased()` marad, és a `.create()` elvileg hibát dobhat vagy üres triggert hoz létre. Nincs `else { throw }` ág. Kis kockázat (belső függvény, fix hívásokkal), de robusztusabb lenne egy explicit fallthrough error.
+---
+## V. Összefoglaló táblázat
+| Azonosító | Súly | Fájl | Leírás | Élesítési blokkoló? |
+|-----------|------|------|--------|---------------------|
+| **KRI-01** | KRITIKUS | GmailDrive.gs | `DRIVE_ERROR` ág `try` blokkon kívülre csúszott → SyntaxError → teljes Gmail pipeline nem fut | **IGEN** |
+| KOZ-01 | KÖZEPES | SheetWriter.gs | MEGOSZTOTT kategória nem kap N/A értéket az M oszlopban | nem, de inkonzisztens SSOT |
+| KOZ-02 | KÖZEPES | Validation.gs | `_validateTetelRow_` kategóriafüggetlen → MEGOSZTOTT tételeken false-positive NEM | nem, de félrevezető adat |
+| KOZ-03 | KÖZEPES | ChatNotifier.gs | Fejléc komment elavult `notifyStatusChange` szignatúrával | nem |
+| MIN-01 | MINOR | GmailDrive.gs | Dead code: `.substring(0, 50)` a `_sanitizeFilename_`-ben | nem |
+| MIN-02 | MINOR | TestSetup.gs | Hiányzó `;` az `monthName` sorban | nem |
+| MIN-03 | MINOR | Setup.gs | `addTestPartners()` vs TestSetup.gs eltérő adószám/bankszámla | nem (teszt környezet) |
+| MIN-04 | MINOR | Validation.gs | `valid` változó soha nem olvasott | nem |
+| MIN-05 | MINOR | Triggers.gs | `_ensureTimeTrigger_` nincs `else throw` ismeretlen `type`-ra | nem |
+---
+## VI. Élesítési javaslat
+**Státusz: NEM élesíthető — 1 kritikus blokkoló van.**
+A KRI-01 (`GmailDrive.gs` szintaktikai hiba) miatt az egész rendszer elsődleges belépési pontja (`processNewInvoices`) nem fut. Ez egyetlen sorzárójel (`}`) helyes pozicionálásával javítható — a javítás 5 perces, de élesítés előtt kötelező.
+A KOZ-01 és KOZ-02 nem élesítési blokkolók, de az SSOT adatminőséget rontják — MEGOSZTOTT számlák tételsorai `NEM` értékű M oszloppal kerülnek a sheet-be, ami a jövőbeni riportok és Fázis 6 allokációs logika számára félrevezető. Élesítés előtt érdemes javítani.
+**Javasolt sorrend:**
+1. KRI-01 javítása (kötelező)
+2. KOZ-01 javítása (erősen ajánlott, 3 sor)
+3. KOZ-03 komment frissítés (5 perc)
+4. Minden más MINOR a következő körben
+agentId: ab8203626c7127996 (use SendMessage with to: 'ab8203626c7127996' to continue this agent)
+<usage>total_tokens: 110765

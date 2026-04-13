@@ -1,0 +1,293 @@
+# Armadillo Finance v4 — Teljes Kód- és Spec Review
+**Dátum:** 2026-04-11
+**Reviewer:** Senior Code Review Agent
+**Vizsgált fájlok:** 12 db (Config.gs, Utils.gs, GeminiOCR.gs, SheetWriter.gs, GmailDrive.gs, WednesdayWorkflow.gs, BatchGenerator.gs, ChatNotifier.gs, Validation.gs, Triggers.gs, Setup.gs, TestSetup.gs)
+---
+## Korábban javított hibák ellenőrzése (KR/KP sorozat)
+Az összes korábban listaolt javítás (KR-01 – KR-05, KP-01 – KP-07) valóban be van vezetve a kódban:
+- KATEGORIA helyesírás javítva (Config.gs, 11. sor)
+- ALLOKACIOASSABLON konzekvensen ASCII (Config.gs 217., Validation.gs 91., 239.)
+- `afa_szazalek` null check helyes (GeminiOCR.gs 320. sor)
+- `_getISOYear_` létezik és `_isSameISOWeek_` azt használja (WednesdayWorkflow.gs 190–208.)
+- CONFIG.COLS.PARTNER blokk létezik (Config.gs 208–218.)
+- `loadValidProjects()` egységesített Utils.gs-ben (305. sor), SheetWriter.gs komment megerősíti (213. sor)
+- "(üres)" display (Triggers.gs 305.)
+- `writeInvoiceError` LockService-szel védett (SheetWriter.gs 70–78.)
+- December emlékeztető OPS-re is megy (Triggers.gs 190.)
+- `_loadPendingInvoices_` LockService snapshot (WednesdayWorkflow.gs 281–289.)
+Minden korábbi javítás rendben.
+---
+## KRITIKUS HIBÁK (élesítési blokkolók)
+### KRI-01 — `_getThisWeeksDigestDay_` Vasárnap esetén múlt hétre ugrik
+**Fájl:** `WednesdayWorkflow.gs`, sor 119–138
+**Típus:** Logikai hiba — helytelen heti navigáció
+A `_getThisWeeksDigestDay_` egy vasárnap bemenettel (dow=0) visszalép a megelőző héten lévő szerdára, nem az aktuális hét szerdájára:
+```javascript
+wednesday.setDate(d.getDate() + (3 - dow)); // 3 - 0 = +3, de vasárnapra ez CSÜTÖRTÖKÖT ad
+```
+Vasárnap `dow = 0`, tehát `3 - 0 = 3`, a vasárnaptól +3 nap = szerda a KÖVETKEZŐ héten. Ez ISO-szempontból is rossz: a vasárnapot az ISO rendszer az előző héthez sorolja, de a kód a naptári `setDate` logikával a következő hétre ugrik. A trigger minden nap fut, tehát vasárnap is lefuthat (ha pl. kézzel indítják vagy az ütemezés drift-el), és ilyenkor a `_isTodayDigestDay_` hamisan `false`-t ad — a héten soha nem fut le a digest.
+**Javítás:** ISO-konform hétfő-alapú heti navigáció:
+```javascript
+// ISO hétfőre ugrás, majd +2 nap = szerda
+const dayOfWeek = d.getDay();
+const isoDay    = (dayOfWeek === 0) ? 7 : dayOfWeek; // vasárnap = 7
+const wednesday = new Date(d);
+wednesday.setDate(d.getDate() - isoDay + 3); // hétfő + 2 = szerda
+```
+---
+### KRI-02 — `_writeConfigDate_` nincs LockService-szel védve — race condition `LAST_DIGEST_DATE` / `LAST_BATCH_DATE` írásakor
+**Fájl:** `WednesdayWorkflow.gs`, sor 245–261
+**Típus:** Race condition — dupla digest/batch futás kockázata
+A `wednesdayMorningDigest()` és `wednesdayAfternoonBatch()` egymástól függetlenül ellenőrzi az ISO hétalapú deduplikációt, majd igyekszik beírni a `LAST_DIGEST_DATE` / `LAST_BATCH_DATE` értékeket. A `_writeConfigDate_` nem használ LockService-t. Ha a trigger két példányban fut (GAS időnként dupla triggereket indít rövid időn belül), mindkét futás egyszerre olvashatja el az "idén még nem futott" állapotot, és mindkettő lefolytat egy digest- vagy batch-futást.
+A gazdasági kockázat az utóbbinál valós: két batch generálódhat egyazon héten, kétszer kerülhet sor a `_updateSSOT_` hívásra, ami a guardrail ellenére is kétszer írja a `KÖTEGEK` fülre az új sort (mert a KÖTEG_ID minden futásnál más lesz a `generateId`-ből).
+**Javítás:** A `_writeConfigDate_` és az azt megelőző olvasás/döntés atomi blokkba kell zárni:
+```javascript
+function wednesdayAfternoonBatch() {
+  const lock = acquireLock();
+  try {
+    const lastBatch = _readConfigDate_('LAST_BATCH_DATE');
+    if (lastBatch && _isSameISOWeek_(today, lastBatch)) { return; }
+    _writeConfigDate_('LAST_BATCH_DATE', today); // azonnal, lock alatt
+  } finally {
+    lock.releaseLock();
+  }
+  // ... batch generálás lock után, már biztonságosan
+}
+```
+---
+### KRI-03 — `_isWorkdaySimple_` rekurzív SpreadsheetApp hivást okoz minden digest-nap-számításnál, ami 6× megsokszorozza az API kvótaterhelést
+**Fájl:** `WednesdayWorkflow.gs`, sor 159–162 / `Utils.gs`, sor 70–116
+**Típus:** Teljesítmény / GAS kvóta kockázat
+`_isWorkdaySimple_` meghívja a `getNextWorkday(date, 0)` függvényt. A `getNextWorkday` minden hívásnál:
+1. `SpreadsheetApp.openById()` — egész spreadsheet megnyitása
+2. `configSheet.getDataRange().getValues()` — teljes CONFIG fül olvasása — 4×-et (HOLIDAYS aktuális + jövő, WORKING_SATURDAYS aktuális + jövő)
+A `_getThisWeeksDigestDay_` egy `for`-ciklusban 3× hívja `_isWorkdaySimple_`-t. Minden trigger-futásnál ez 3 × 5 = 15 Spreadsheet API hívást jelent pusztán a nap ellenőrzésére, mielőtt bármilyen üzleti logika futna. Élesben, ahol a 15 perces Gmail poller is fut és maga is `getNextWorkday`-t hív a fizetési határidők számításakor, az összesített API hívásszám megközelítheti a napi GAS kvótakorlátot (50.000 URL/UrlFetch + Spreadsheet hívás).
+**Javítás:** A CONFIG fül adatát egyszer olvassák be egy paraméterként átadott `{holidays, workingSats}` objektumba, és ezt kell átadni a belső `_isWorkday_` hívásoknak. A `_getThisWeeksDigestDay_` paramétert kapjon, ne nyisson Spreadsheet-et.
+---
+### KRI-04 — `runDigestNow()` nem TEST_MODE-védett — éles adatbázison futtatható
+**Fájl:** `WednesdayWorkflow.gs`, sor 339–348
+**Típus:** Élesítési kockázat — emberi hiba potenciál
+A `runBatchNow()` rendelkezik `TEST_MODE` ellenőrzéssel (355. sor), de a `runDigestNow()` nem. Ez azt jelenti, hogy éles módban az ADMIN bármelyik fejlesztő véletlenül is futtathatja a digest-et (pl. egy szerdán, amikor már lefutott), ami dupla értesítést küld Péternek és felülírja a `LAST_DIGEST_DATE` értékét — megzavarva a heti deduplikáció logikát.
+**Javítás:**
+```javascript
+function runDigestNow() {
+  if (!CONFIG.TEST_MODE) {
+    throw new Error('runDigestNow() csak TEST_MODE=true esetén futtatható! ' +
+      'Éles futtatáshoz közvetlenül módosítsd a LAST_DIGEST_DATE értékét a CONFIG fülön.');
+  }
+  // ...
+}
+```
+---
+## KÖZEPES HIBÁK (kockázatos, de nem blokkoló)
+### KOZ-01 — `MEGOSZTOTT` kategóriájú számla: `_decideStatusz_` `N/A` összegzőre `BEÉRKEZETT`-et ad vissza, de a logika hibás összefüggés
+**Fájl:** `GeminiOCR.gs`, sor 420–421 + `_aggregatePO_`, sor 349–401
+**Típus:** Üzleti logika következetlenség
+Egy `MEGOSZTOTT` kategóriájú számla esetén `_aggregatePO_` NEM ad `N/A`-t — azt csak az `ÁLLANDÓ` bypass adja. A `MEGOSZTOTT` számlák végigmennek a normál PO aggregáláson, tehát ha a tételeknek nincs PO-juk, `HIÁNYOS` összegzőt kapnak. A `_decideStatusz_` 420–421. sorában az `if (poAgg.poSummary === 'N/A') return 'BEÉRKEZETT'` ág ezért `MEGOSZTOTT` esetén soha nem fut le — a komment ("pl. MEGOSZTOTT + sablon nélkül is elfogadjuk") félrevezető, és a tényleges viselkedés az üzleti szándéktól eltér: egy `MEGOSZTOTT` rezsi-számla PO nélkül `HIÁNYOS_PO` státuszt kap ahelyett, hogy `BEÉRKEZETT` lenne.
+**Javítás:** Explicit `MEGOSZTOTT` bypass az `_aggregatePO_`-ban:
+```javascript
+if (kategoria === CONFIG.KATEGORIAK.ALLANDO ||
+    kategoria === CONFIG.KATEGORIAK.MEGOSZTOTT) {
+  return { poSummary: 'N/A', poConfidence: 100,
+           poReasoning: kategoria + ' kategória — PO ellenőrzés kihagyva' };
+}
+```
+---
+### KOZ-02 — `_loadPendingInvoices_` guardrail fordított logika — JÓVÁHAGYVA + üres KOTEG_ID feltétel
+**Fájl:** `WednesdayWorkflow.gs`, sor 294–295
+**Típus:** Logikai hiba — megakadályozza az utalt számlák újra-feldolgozását, de fordítva is igaz
+```javascript
+if (String(row[c.KOTEG_ID - 1] || '').trim() !== '')  return; // ← hard guardrail
+```
+Ez a guardrail kiszűri azokat a sorokat, amelyek már rendelkeznek `KOTEG_ID`-vel, tehát már szerepeltek egy korábbi kötegben. Ez helyes. Azonban a kondíció csak a KOTEG_ID ürességét ellenőrzi, a `STATUSZ` = `JÓVÁHAGYVA` ellenőrzéssel együtt az implicált feltétel: "JÓVÁHAGYVA státuszú, KOTEG_ID nélküli" sorok kerülnek a kötegbe.
+A probléma: ha egy számlán a `STATUSZ` manuálisan visszaállítódik `JÓVÁHAGYVA`-ra (pl. hibás batch után), de a `KOTEG_ID` már ki van töltve, akkor az a számla ki van zárva a következő kötegből — ami helyes viselkedés, de **a hibás batch esetén soha nem kerülhet újra kötegbe**. Nincs erre vonatkozó dokumentáció vagy workflow a kódban. Ez élesben bővebb operatív kockázatot jelent.
+**Javítás:** A guardrail kommentet bővíteni, és esetleg egy `KOTEG_ID` törlési procedure dokumentálni:
+```javascript
+// GUARDRAIL: Ha már van KOTEG_ID, ne szerepeljen újra kötegben.
+// Manuális újrafeldolgozáshoz: töröld a V oszlop értékét (autobot@ jogosultság kell).
+```
+---
+### KOZ-03 — `_updateSSOT_` a KÖTEGEK sorba `'LEZÁRT'` státuszt ír, de a Setup.gs dropdown `'NYITOTT'` → `'LEZÁRT'` sorrend implikálja a `'NYITOTT'`-ot kellene először írni
+**Fájl:** `BatchGenerator.gs`, sor 318 vs. `Setup.gs`, sor 353
+**Típus:** Adatkonsisztencia — dropdown és tényleges érték eltérés
+A `_updateSSOT_` rögtön `'LEZÁRT'` státuszt ír a KÖTEGEK fülre, holott a `KÖTEGEK` dropdown értékei `['NYITOTT', 'LEZÁRT', 'FELTÖLTVE', 'HIBA']` sorrendben vannak. Az üzleti logika szerint a `LEZÁRT` státusz azt jelenti, hogy a fájl MagNet-be lett feltöltve — de a kód ebbe az állapotba írja a fájlt a generálás pillanatában. Péternek a `MagNet feltöltve` (I oszlop) = `NEM` értéket kellene állítania `IGEN`-re, és a `Státusz`-t `FELTÖLTVE`-re. A jelenlegi megközelítés szerint az I=NEM, F=LEZÁRT kombináció szemantikailag ellentmondásos.
+**Javítás:** Az initial státuszt `'NYITOTT'`-ra kell állítani, és Péter állítsa `LEZÁRT`/`FELTÖLTVE`-re feltöltés után:
+```javascript
+'NYITOTT',   // F Státusz — Péter állítja LEZÁRT/FELTÖLTVE-re
+```
+---
+### KOZ-04 — `_buildBankMap_` adószám szanitizálása eltér `_getPartnerKategoria_`-tól — inkonzisztens kulcs-matching
+**Fájl:** `WednesdayWorkflow.gs`, sor 324 vs. `GeminiOCR.gs`, sor 458
+**Típus:** Adatminőség — bankszámlaszám nem találása potenciális
+A `_buildBankMap_` az adószámból kiszűri a nem-szám-és-kötőjel karaktereket:
+```javascript
+.replace(/[^0-9\-]/g, '')
+```
+A `_getPartnerKategoria_` viszont csak a számokat tartja meg:
+```javascript
+.replace(/[^0-9]/g, '')
+```
+Ha egy partner adószáma a PARTNEREK fülön kötőjelekkel van tárolva (pl. `12345678-2-41`), akkor `_buildBankMap_` kulcsa `12345678-2-41` lesz, de a `_loadPendingInvoices_` a BEJÖVŐ_SZÁMLÁK C oszlopából olvassa az adószámot, amit viszont a GeminiOCR írta be — és a GeminiOCR az OCR-olt adószámot kötőjelek nélkül is tárolhatja (`123456782`). Ez `bankszamla: ''` eredményt ad, és a számla kiesik a batch-ből.
+**Javítás:** Egységesítsd az adószám normalizálást mind a két helyen — csak számokat tartsd, a kötőjeleket dobd el mindenhol:
+```javascript
+.replace(/[^0-9]/g, '') // mindkét helyen
+```
+---
+### KOZ-05 — `_getConfigSet_` a CONFIG fület 4× olvassa be `getNextWorkday()` hívásánál — minden hívásnál redundáns `getDataRange().getValues()`
+**Fájl:** `Utils.gs`, sor 77–80 + 140–149
+**Típus:** Teljesítmény / GAS kvóta
+A `getNextWorkday()` egymás után 4× hívja `_getConfigSet_`-et, és minden hívásban:
+```javascript
+const data = sheet.getDataRange().getValues(); // teljes CONFIG fül — 4×
+```
+Ez 4 szinkron Spreadsheet API olvasás egyetlen workday-számítás alatt. Ha a `_getThisWeeksDigestDay_` 3× hívja a `_isWorkdaySimple_`-t, az napi triggernél összesen 12 CONFIG-olvasást jelent, mielőtt bármilyen üzleti logika futna.
+**Javítás:** A `getNextWorkday()` olvassa be a CONFIG adatot egyszer, és adja tovább a `_getConfigSet_` / `_isWorkday_` hívásoknak:
+```javascript
+function getNextWorkday(fromDate, addDays) {
+  const configData = configSheet.getDataRange().getValues(); // 1×
+  const holidays   = _getConfigSetFromData_(configData, 'HOLIDAYS_' + year);
+  // ...
+}
+```
+---
+### KOZ-06 — `_buildFejRecord_` és `_buildLabRecord_` komment: "forint vagy fillér?" — MagNet formátum nincs megerősítve
+**Fájl:** `BatchGenerator.gs`, sor 183, 198–199, 220
+**Típus:** Élesítési kockázat — MagNet bankfájl helyesség
+```javascript
+_pad_(String(Math.round(totalAmount)), 15, 'R', '0'); // [47-61] Összeg — MagNet spec ellenőrzendő (forint vagy fillér?)
+```
+A kód kommentjei explicit `⚠️ KÖTELEZŐ ellenőrizni` figyelmeztetést tartalmaznak, de maga a `Math.round(totalAmount)` forintban számol, fillér nélkül. Ha a MagNet spec fillérben várja az összeget (ami banki API esetén szokásos), akkor minden összeg 100× kisebb lesz a kelleténél — pl. 127.000 Ft helyett 1.270 Ft-ot utal a rendszer.
+**Javítás:** Ezt élesítés előtt kötelező a MagNet Business dokumentációval szemben validálni és a kódot az eredmény alapján javítani. A `_buildFejRecord_` és `_buildTetelRecord_` összeg-mezőit kommenttel kell megjelölni a validálási státusszal (VERIFIED / ELLENŐRZENDŐ).
+---
+### KOZ-07 — `_onBejovoszamlaStatuszChange_` a `JOVAHAGYO` oszlopig olvassa a sort, de nem olvassa a `VISSZAUTASITAS_OKA` (T=20) oszlopot — visszautasítás oka nem kerül az értesítőbe
+**Fájl:** `Triggers.gs`, sor 294–321 / `ChatNotifier.gs`, sor 109–118
+**Típus:** Hiányos funkció — üzleti igény részleges teljesítése
+A `notifyStatusChange()` a `VISSZAUTASÍTVA` ágban csak a visszautasító nevét küldi, az okot nem — holott a BEJÖVŐ_SZÁMLÁK T oszlopa tartalmazza. A `_onBejovoszamlaStatuszChange_` csak `c.JOVAHAGYO` (18. oszlop) széltéig olvassa a sort, a `VISSZAUTASITAS_OKA` (20. oszlop) kimarad. Ági és Péter a Chat-értesítőből nem látják az okot, és kénytelenek bejelentkezni a sheet-be.
+**Javítás:**
+```javascript
+// Triggers.gs, _onBejovoszamlaStatuszChange_:
+const rowData = sheet.getRange(row, 1, 1, c.VISSZAUTASITAS_OKA).getValues()[0];
+const visszautasitasOka = String(rowData[c.VISSZAUTASITAS_OKA - 1] || '');
+// notifyStatusChange() paraméterlistáját bővíteni:
+function notifyStatusChange(..., visszautasitasOka) {
+  // VISSZAUTASÍTVA ágban:
+  text += '\n• Ok: ' + (visszautasitasOka || '–');
+}
+```
+---
+### KOZ-08 — `_isProjektszamValid_._cache` és `loadValidProjects._cache` párhuzamos cache — redundáns PROJEKTEK fül olvasás, inkonzisztens értékek lehetségesek
+**Fájl:** `Validation.gs`, sor 303–319 vs. `Utils.gs`, sor 305–324
+**Típus:** DRY megsértése — két independent cache ugyanarra az adatra
+A `loadValidProjects._cache` (Utils.gs) egy `string[]` tömböt cache-el, a `_isProjektszamValid_._cache` (Validation.gs) egy `Set`-et. Mindkettő a PROJEKTEK fül A oszlopát olvassa. Ha a PROJEKTEK fül egy triggerfutás során módosul (Ági hozzáad egy projektet, közben fut az onEdit), a két cache inkonzisztens állapotba kerülhet: `loadValidProjects` a régi listát adja a GeminiOCR-nek, `_isProjektszamValid_` az újat a Validation.gs-nek (vagy fordítva).
+**Javítás:** A `_isProjektszamValid_` használja a `loadValidProjects()` cache-ét:
+```javascript
+function _isProjektszamValid_(projektszam) {
+  const projects = loadValidProjects(); // Utils.gs megosztott cache
+  return projects.indexOf(String(projektszam).trim()) !== -1;
+}
+```
+A `loadValidProjects._cache = null` cache törlés a `validateAllTetelek()` -ben marad.
+---
+## MINOR HIBÁK (clean code, nice to have)
+### MIN-01 — Dupla JSDoc blokk a `writeInvoiceToSheet()` előtt
+**Fájl:** `SheetWriter.gs`, sor 17–29
+**Típus:** Kódminőség — dokumentáció duplikáció
+```javascript
+/**
+ * @param ...  // ← 1. JSDoc blokk (sor 17–26)
+ */
+/**
+ * @returns {string}  // ← 2. JSDoc blokk (sor 27–29)
+ */
+function writeInvoiceToSheet(...) {
+```
+Két különálló JSDoc blokk van egymás után ugyanahhoz a függvényhez. A JavaScript dokumentáció konvenció szerint az utolsó JSDoc blokk kötődik a függvényhez — az első elvész. Egyesíteni kell őket.
+---
+### MIN-02 — `_buildFejRecord_` és `_buildLabRecord_` `var` kulcsszót használ, a többi fájl `const`/`let`-et
+**Fájl:** `BatchGenerator.gs`, sor 175, 200, 218
+**Típus:** Kódstílus inkonzisztencia
+```javascript
+var rec = '';  // BatchGenerator.gs
+const row = new Array(...) // SheetWriter.gs
+```
+A projekt többi fájlja következetesen `const`/`let`-et használ ES6+ stílusban. A `var` ebben a kontextusban funkcionálisan nem hibás (GAS V8 mindkettőt kezeli), de inkonzisztens.
+---
+### MIN-03 — `listPendingInvoices()` typo a log üzenetben
+**Fájl:** `WednesdayWorkflow.gs`, sor 381
+**Típus:** Typo
+```javascript
+console.log('Nincs JÓVÁHAGYVA számlá.'); // "számlá" → "számla"
+```
+---
+### MIN-04 — `_sanitizeFilename_` maximuma 50 karakter, de `_buildFinalFileName_` 30+8+30+'.pdf' = 70 karakterre csonkítja a bemenetet mielőtt átadná
+**Fájl:** `GmailDrive.gs`, sor 258–263 és 283–289
+**Típus:** Felesleges logika / dokumentáció eltérés
+A `_sanitizeFilename_` dockommentje "Max 50 karakter"-t ír, de soha nem kap 50-nél hosszabb stringet, mert `_buildFinalFileName_` már `substring(0, 30)` -ra vágja a bemenetét. Az 50 karakteres vágás ezért sosem aktiválódik. A dockomment félrevezető.
+---
+### MIN-05 — `_getConfigSet_` és `_getConfigStatus_` mind a kettő külön `getDataRange().getValues()` hívást végez a `getNextWorkday()`-ban
+**Fájl:** `Utils.gs`, sor 140–163
+**Típus:** Kódismétlés — már KOZ-05-nél jelezve, de code smell szinten is önálló
+A két privát függvény ugyanolyan struktúrájú, csak más oszlopot olvas vissza. Egy általánosabb `_findConfigRow_(data, key)` segédfüggvénnyel összevonható.
+---
+### MIN-06 — `_ensureTimeTrigger_` `onMonthDay` ágban a `interval` (=1) a nap, de a paraméter neve `interval` — megtévesztő
+**Fájl:** `Triggers.gs`, sor 104–106
+```javascript
+} else if (type === 'onMonthDay') {
+  builder = builder.onMonthDay(interval).atHour(hour).inTimezone('Europe/Budapest');
+}
+```
+A `_ensureTimeTrigger_(existing, ..., 'onMonthDay', 1, 9)` hívásnál az `interval = 1` a hónap napját (1-jét) jelenti, de a paraméter neve `interval` — ami általában időközöt jelent. Az `everyMinutes(15)` és `onMonthDay(1)` kontextusában a neve félrevezető. Átnevezendő `value`-ra vagy `intervalOrDay`-re.
+---
+### MIN-07 — `TestSetup.gs` CONFIG fülre 8 sort ír, de a `LAST_BATCH_DATE` kulcs hiányzik
+**Fájl:** `TestSetup.gs`, sor 114–123
+A `configSheet.getRange('A2:C8').setValues(...)` 7 sort ír be (HOLIDAYS_2026, HOLIDAYS_2027, WORKING_SATURDAYS_2026, WORKING_SATURDAYS_2027, PO_CONFIDENCE_THRESHOLD, ADMIN_EMAIL, ARMADILLO_BANKSZAMLA, LAST_DIGEST_DATE). Összeszámolva: 8 értékes sor fér el a `A2:C8` tartományban, de a `LAST_BATCH_DATE` kulcs nem szerepel a listában. Első éles futásnál a `_readConfigDate_('LAST_BATCH_DATE')` `null`-t ad vissza — ez önmagában helyes viselkedés (első futásként kezeli), de a konzisztencia kedvéért érdemes bevenni.
+---
+### MIN-08 — `_decemberReminder_` `notifyAdmin()` hívásánál az első paraméter az alany, a második paraméter az üzenet teste, de az üzenet teste tartalmaz Chat markdown formázást (`*`) — emailben ez "csillagként" jelenik meg
+**Fájl:** `Triggers.gs`, sor 179–191
+```javascript
+const msg = '📅 *Éves teendő — naptár frissítés szükséges*\n...'
+notifyAdmin('Éves naptár frissítés szükséges — ' + nextYear, msg);
+```
+A `notifyAdmin()` az email testbe közvetlenül átmásolja a `msg`-t. A Chat markdown `*bold*` formázás emailben nyers csillagjelként jelenik meg. A Chat és az email értesítőkhöz külön törzsszöveget kellene készíteni.
+---
+## Összefoglaló táblázat
+| ID | Fájl | Súlyosság | Kategória | Leírás |
+|---|---|---|---|---|
+| KRI-01 | WednesdayWorkflow.gs:119 | KRITIKUS | Logikai hiba | `_getThisWeeksDigestDay_` vasárnapra rossz heti számítás |
+| KRI-02 | WednesdayWorkflow.gs:245 | KRITIKUS | Race condition | `_writeConfigDate_` LockService nélkül — dupla batch kockázat |
+| KRI-03 | WednesdayWorkflow.gs:159 + Utils.gs:70 | KRITIKUS | Teljesítmény/kvóta | `_isWorkdaySimple_` → 15+ Spreadsheet API hívás triggernként |
+| KRI-04 | WednesdayWorkflow.gs:339 | KRITIKUS | Élesítési kockázat | `runDigestNow()` nincs TEST_MODE-védve |
+| KOZ-01 | GeminiOCR.gs:420 | KÖZEPES | Üzleti logika | MEGOSZTOTT számla PO nélkül hibásan HIÁNYOS_PO-t kap |
+| KOZ-02 | WednesdayWorkflow.gs:295 | KÖZEPES | Operatív kockázat | Hibás batch utáni újrafeldolgozás lehetetlen, nincs dokumentálva |
+| KOZ-03 | BatchGenerator.gs:318 | KÖZEPES | Adatkonsisztencia | KÖTEGEK státusz LEZÁRT-ként indul, MagNet feltöltve=NEM — szemantikai ellentmondás |
+| KOZ-04 | WednesdayWorkflow.gs:324 vs GeminiOCR.gs:458 | KÖZEPES | Adatminőség | Adószám normalizálás eltérése → bankszámla nem találása |
+| KOZ-05 | Utils.gs:77–80 | KÖZEPES | Teljesítmény | CONFIG fül 4× redundáns olvasása `getNextWorkday()` hívásánként |
+| KOZ-06 | BatchGenerator.gs:183,199 | KÖZEPES | Élesítési kockázat | MagNet összeg forint/fillér nincs megerősítve — potenciálisan 100× hiba |
+| KOZ-07 | Triggers.gs:296 + ChatNotifier.gs:109 | KÖZEPES | Hiányos funkció | Visszautasítás oka nem szerepel a Chat értesítőben |
+| KOZ-08 | Validation.gs:303 vs Utils.gs:305 | KÖZEPES | DRY / inkonzisztencia | Két párhuzamos cache a PROJEKTEK fülre |
+| MIN-01 | SheetWriter.gs:17 | MINOR | Dokumentáció | Dupla JSDoc blokk `writeInvoiceToSheet()` előtt |
+| MIN-02 | BatchGenerator.gs:175,200 | MINOR | Kódstílus | `var` helyett `const`/`let` |
+| MIN-03 | WednesdayWorkflow.gs:381 | MINOR | Typo | "számlá" → "számla" |
+| MIN-04 | GmailDrive.gs:283 | MINOR | Felesleges logika | `_sanitizeFilename_` 50-es vágás sohasem aktiválódik |
+| MIN-05 | Utils.gs:140–163 | MINOR | Kódismétlés | `_getConfigSet_` és `_getConfigStatus_` összevonható |
+| MIN-06 | Triggers.gs:92 | MINOR | Elnevezés | `interval` vs. `day` megtévesztő `onMonthDay` esetén |
+| MIN-07 | TestSetup.gs:114 | MINOR | Hiányos inicializálás | `LAST_BATCH_DATE` hiányzik a CONFIG alap sorokból |
+| MIN-08 | Triggers.gs:179 | MINOR | UX | Chat markdown csillagok emailben nyers szövegként jelennek meg |
+---
+## Prioritizált élesítési javaslat
+**Élesítés ELŐTT kötelező (blokkoló):**
+1. KRI-02 — dupla batch/digest race condition LockService fix
+2. KRI-01 — vasárnapi digest-nap számítás fix
+3. KRI-04 — `runDigestNow()` TEST_MODE guard
+4. KOZ-04 — adószám normalizálás egységesítése (bankszámla-eltérés)
+5. KOZ-06 — MagNet forint/fillér manuális validálás a bankkal
+**Élesítés után, első iterációban:**
+- KOZ-01 (MEGOSZTOTT PO bypass)
+- KOZ-07 (visszautasítás ok az értesítőben)
+- KOZ-03 (KÖTEGEK státusz szemantika)
+- KRI-03 + KOZ-05 (CONFIG olvasás optimalizálás — kvóta védelméért)
+- KOZ-08 (cache egységesítés)
+agentId: a6af23989f9ed12c2 (use SendMessage with to: 'a6af23989f9ed12c2' to continue this agent)
+<usage>total_tokens: 115407
+tool_uses: 40
+duration_ms: 305250</usage>

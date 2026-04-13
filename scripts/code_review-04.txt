@@ -1,0 +1,100 @@
+# Armadillo Finance v4 — 4. Review-kör: Élesítési értékelés
+---
+## 1. Korábbi javítások ellenőrzése (3. review után)
+| # | Javítás leírása | Eredmény | Hol |
+|---|---|---|---|
+| R1 | GmailDrive.gs: DRIVE_ERROR ág visszakerült a try blokkba | ✅ Rendben — a `_processMessage_()` return 'DRIVE_ERROR' a catch előtt van, a hívó (`processNewInvoices`) az else if ágban számolja | GmailDrive.gs:76-80 |
+| R2 | SheetWriter.gs: `_computePoValidalt_` MEGOSZTOTT → N/A | ✅ Rendben — `if (kategoria === CONFIG.KATEGORIAK.ALLANDO \|\| kategoria === CONFIG.KATEGORIAK.MEGOSZTOTT) return 'N/A'` | SheetWriter.gs:201-202 |
+| R3 | Validation.gs: KOZ-02 korlát dokumentálva + valid dead code jelölve | ✅ Rendben — 14 soros komment a `_validateTetelRow_()` M újraszámítás előtt, `valid` változó MIN-04-ként jelölve | Validation.gs:170-176, 133 |
+| R4 | ChatNotifier.gs: `notifyStatusChange` fejléc komment 8 paraméter | ✅ Rendben — fejlécsor: `notifyStatusChange(szamlaId, szallitoNev, osszeg, deviza, regiStatusz, ujStatusz, jovahagyoNev, visszautasitasOka)` | ChatNotifier.gs:12 |
+| R5 | Triggers.gs: `_ensureTimeTrigger_` else-throw ág | ✅ Rendben — `throw new Error('_ensureTimeTrigger_: ismeretlen trigger type: "' + type + '"')` | Triggers.gs:109-111 |
+| R6 | TestSetup.gs: pontosvessző javítva | ✅ Rendben — szintakszis hibátlan | TestSetup.gs teljes |
+---
+## 2. Kritikus hibák (KRI)
+**Nincs kritikus hiba.**
+---
+## 3. Közepes hibák (KOZ)
+### KOZ-01 — Setup.gs: `_setDropdown_` a SZÁMLA_TÉTELEK M oszlopára nem tartalmaz 'N/A' értéket
+**Hely:** Setup.gs:232
+**Leírás:** A SZÁMLA_TÉTELEK M oszlop (PO_VALIDÁLT) dropdown validációja csak `['IGEN', 'NEM']` értékeket engedélyez:
+```js
+_setDropdown_(sheet, 13, ['IGEN', 'NEM']);
+```
+A `SheetWriter.gs:_computePoValidalt_()` azonban ÁLLANDÓ és MEGOSZTOTT kategóriánál 'N/A'-t ír ebbe az oszlopba. Az eredmény: minden automatikusan beírt 'N/A' értéknél a Sheets piros validációs figyelmeztetést mutat, ami hamis riasztásokat okoz és Ági/Péter számára zavaró lesz éles használatban.
+**Javítás:**
+```js
+_setDropdown_(sheet, 13, ['IGEN', 'NEM', 'N/A']);
+```
+---
+### KOZ-02 — Config.gs: `ALLOKACIO_ALAPERTELMEZETT` a JSDoc típusdokumentációban szerepel, de az objektumban nem létezik
+**Hely:** Config.gs:97 vs Config.gs:100-231
+**Leírás:** A `@type` JSDoc komment 97. sorában szerepel az `ALLOKACIO_ALAPERTELMEZETT: string` mező, de a `CONFIG` IIFE-ben sehol nincs ilyen kulcs. A mező nem kerül felhasználásra egyetlen fájlban sem, de a dokumentáció és az implementáció közötti eltérés félrevezető — élesítés után bármely fejlesztő hiányosnak érezheti a CONFIG-ot.
+**Javítás:** Töröld a JSDoc-ból az `ALLOKACIO_ALAPERTELMEZETT: string,` sort (97. sor).
+---
+### KOZ-03 — ChatNotifier.gs fejléckomment `notifyWednesdayDigest(pendingRows)` — hiányzik a `utalasDate` paraméter
+**Hely:** ChatNotifier.gs:13
+**Leírás:** A fájl tetején lévő publikus API-listában:
+```
+notifyWednesdayDigest(pendingRows)
+```
+A tényleges függvény szignatúrája: `notifyWednesdayDigest(pendingRows, utalasDate)`. Az `utalasDate` paraméter nélkül a függvény `utalasDate` undefined-ot kapna, ami `formatDate(undefined)` → üres string `'Tervezett utalási nap: **' + '' + '*'` — bár a hívó (`WednesdayWorkflow.gs`) mindig átadja a paramétert, a félrevezető dokumentáció karbantartási kockázat.
+**Javítás:** Javítsd a fejléckommentet:
+```
+notifyWednesdayDigest(pendingRows, utalasDate)
+```
+---
+## 4. Minor hibák (MIN)
+### MIN-01 — Validation.gs `_validateTetelRow_()`: ha csak K (PO_CONFIDENCE) változik, a J-re vonatkozó FK ellenőrzés nem fut le
+**Hely:** Validation.gs:137-154
+**Leírás:** Az `if (col === CONFIG.COLS.TETEL.PO)` ág csak akkor fut, ha J változik. Ha valaki K-t módosít, a J cellán esetleg meglévő piros hibajelet (`_setCellError_`) soha nem törli, és a J cellát nem ellenőrzi újra. Ez csak vizuális mellékhatás (régi hibajel nem tűnik el), a PO_VALIDÁLT M értéke helyesen számolja a végeredményt.
+**Javítás:** Alacsony prioritás, Fázis 6-ra halasztható. Dokumentáld a `_validateTetelRow_()` fejléckommentjében.
+---
+### MIN-02 — Triggers.gs `_onBejovoszamlaStatuszChange_()` elhelyezése: a Triggers.gs-ben definiált, de Validation.gs-ből hívott
+**Hely:** Triggers.gs:312, Validation.gs:98
+**Leírás:** A `_onBejovoszamlaStatuszChange_()` függvény a Triggers.gs-ben van definiálva (a fejléckomment szerint is "szorosan kapcsolódik a trigger életciklushoz"), de az `onEditInstallable()` hívja Validation.gs-ből. Ez nem runtime hiba (GAS közös névtérbe tölti az összes .gs fájlt), de a fájlhatár keresztezése csökkenti az átláthatóságot. Fázis 6-ban érdemes a Validation.gs-be áthelyezni.
+---
+### MIN-03 — BatchGenerator.gs: `_getOrCreateBatchSubfolder_` duplikálódik a `_getOrCreateSubfolder_`-rel (GmailDrive.gs)
+**Hely:** BatchGenerator.gs:285-288, GmailDrive.gs:275-279
+**Leírás:** Mindkét függvény azonos logikát valósít meg (getOrCreate mappa). Nem runtime hiba, de DRY elvvel ellentétes — ha az egyik megváltozna, a másik nem követi. A jövőbeli refaktoráláshoz érdemes Utils.gs-be emelni.
+---
+### MIN-04 — `withRetry` delay aritmetika: "exponenciális" névvel fut, de lineárisan számol
+**Hely:** Utils.gs:41
+**Leírás:** A komment "Exponenciális backoff" (`30s → 60s → 90s`), de az implementáció `baseDelayMs * attempt` — ez lineáris, nem exponenciális. Az implementáció helyes és szándékos (a 30s/60s/90s értékek működőképesek), csak a komment félrevezető. Valódi exponenciális lenne `baseDelayMs * 2^(attempt-1)`.
+---
+### MIN-05 — GmailDrive.gs: többpéldányos PDF esetén csak az első PDF kerül OCR-re, a többi "árva" Drive fájl marad
+**Hely:** GmailDrive.gs:161-163
+**Leírás:** Ha egy emailhez 2+ PDF tartozik, mindkettő mentődik Drive-ra, de OCR csak az első (`savedFiles[0]`) fut le. A másodiktól kezdődő fájlok `FELDOLGOZAS_ALATT_...` névvel maradnak a Drive-ban örökre — szükséges dokumentálni, hogy ez szándékos viselkedés-e, vagy esetleg notifyAdmin-t kell küldeni.
+---
+### MIN-06 — `_loadPendingInvoices_()` lock-on belüli kétszeres `getLastRow()` hívás lehetséges
+**Hely:** WednesdayWorkflow.gs:305-313
+**Leírás:** A `bejovo.getLastRow()` a lock megszerzése után kerül hívásra, ami helyes. Ez rendben van. Csak audit-megjegyzés: a `_buildBankMap_` szintén a lock-on belül hívódik, és saját `getLastRow()`-t hív — ez összesen 2 külön API hívás, ami elfogadható, de egységesíteni lehetne.
+---
+## 5. Élesítési go/no-go döntés
+### Összefoglaló táblázat
+| Szint | ID | Fájl | Típus | Leírás | Go/No-go hatás |
+|---|---|---|---|---|---|
+| KOZ | KOZ-01 | Setup.gs:232 | Validáció | 'N/A' hiányzik a PO_VALIDÁLT dropdown-ból | Működési zavar — piros hibajel minden ÁLLANDÓ/MEGOSZTOTT számlánál |
+| KOZ | KOZ-02 | Config.gs:97 | Dokumentáció | `ALLOKACIO_ALAPERTELMEZETT` JSDoc vs. implementáció eltérés | Karbantartási kockázat |
+| KOZ | KOZ-03 | ChatNotifier.gs:13 | Dokumentáció | `notifyWednesdayDigest` fejléc hiányos | Karbantartási kockázat |
+| MIN | MIN-01 | Validation.gs:137 | UX | J hibajel nem törlődik K változásakor | Vizuális mellékhatás |
+| MIN | MIN-02 | Triggers.gs:312 | Szerkezet | `_onBejovoszamlaStatuszChange_` rossz helyen | Átláthatósági kérdés |
+| MIN | MIN-03 | BatchGenerator.gs:285 | DRY | `_getOrCreateBatchSubfolder_` duplikáció | Karbantartási kockázat |
+| MIN | MIN-04 | Utils.gs:41 | Komment | "exponenciális" backoff lineáris | Félrevezető komment |
+| MIN | MIN-05 | GmailDrive.gs:161 | Dokumentáció | Többpéldányos PDF kezelés nem dokumentált | Üzemeltetési kérdés |
+---
+### Go/No-go döntés
+**CONDITIONAL GO — egy javítással élesíthető.**
+**Kötelező javítás élesítés előtt:**
+**KOZ-01 (Setup.gs:232):** A `_setDropdown_` hívást javítani kell `['IGEN', 'NEM', 'N/A']`-ra. Ez az egyetlen olyan hiba, amely a normál üzleti folyamatban — minden ÁLLANDÓ és MEGOSZTOTT kategóriájú partner feldolgozásakor — látható, ismétlődő vizuális hibát okoz. A többi KOZ és MIN hiba vagy dokumentációs jellegű (KOZ-02, KOZ-03), vagy működési szempontból inert (MIN-01 through MIN-05).
+**A KOZ-02 és KOZ-03 javítása szintén elvárható élesítés előtt** (egy-egy soros módosítások), de nem blokkolják a funkcionális működést.
+**Ami kifejezetten rendben van ebben a körben:**
+- A 3. review 6 javítása mind helyesen implementált
+- LockService claim-before-work minta (WednesdayWorkflow.gs) helyesen védi a dupla futást
+- MagNet forint/fillér kérdés dokumentálva három helyen (FEJ, TÉTEL, LÁB rekordoknál) `⚠️ ELLENŐRZENDŐ` kommentekkel
+- Cross-file oszlopindex-konzisztencia (COLS.BEJOVO, COLS.TETEL, COLS.PARTNER, COLS.ALLOKACIO) végig következetes
+- Cache-kulcsok (`loadValidProjects._cache`, `getNextWorkday._configCache`) konzisztensek
+- `_isWorkdaySimple_()` → `getNextWorkday(date, 0)` visszahívás logikusan helyes, de mélyen rekurzív: `_isWorkdaySimple_` → `getNextWorkday` → `_isWorkday_` → `formatDate` — ez nem jelent problémát, a cache miatt nem okoz redundáns API hívást
+agentId: a9695d44b6912e2a2 (use SendMessage with to: 'a9695d44b6912e2a2' to continue this agent)
+<usage>total_tokens: 106763
+tool_uses: 30
+duration_ms: 157636</usage>
