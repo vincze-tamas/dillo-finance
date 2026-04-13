@@ -407,9 +407,28 @@ createApp({
         getTasksByGroup(group) { return this.currentPhaseTasks.filter(t=>t.group===group); },
         getOwnerClass(owner) { return OWNER_CLASSES[owner]||'bg-slate-100 text-slate-600 border-slate-200'; },
         toggleTask(task) { task.timestamp=task.done?new Date().toLocaleString('hu-HU'):null; this.saveData(); },
-        saveData() { localStorage.setItem('armadilloTrackerV4',JSON.stringify(this.tasks)); },
-        loadData() { const s=localStorage.getItem('armadilloTrackerV4'); this.tasks=s?JSON.parse(s):JSON.parse(JSON.stringify(initialTasks)); },
-        resetData() { if(confirm('Biztosan törlöd az összes pipát?')){ localStorage.removeItem('armadilloTrackerV4'); this.tasks=JSON.parse(JSON.stringify(initialTasks)); } },
+        saveData() { localStorage.setItem('armadilloTrackerV5',JSON.stringify(this.tasks)); },
+        loadData() {
+            // V5: friss adat
+            const s5=localStorage.getItem('armadilloTrackerV5');
+            if(s5){ this.tasks=JSON.parse(s5); return; }
+            // Migráció V4→V5: pipák megmaradnak, title+testDesc az új initialTasks-ból jön
+            const s4=localStorage.getItem('armadilloTrackerV4');
+            if(s4){
+                const old=JSON.parse(s4);
+                const oldMap={};
+                old.forEach(t=>{ oldMap[t.id]={done:t.done,timestamp:t.timestamp}; });
+                this.tasks=JSON.parse(JSON.stringify(initialTasks)).map(t=>{
+                    if(oldMap[t.id]){ t.done=oldMap[t.id].done; t.timestamp=oldMap[t.id].timestamp; }
+                    return t;
+                });
+                localStorage.removeItem('armadilloTrackerV4');
+                this.saveData();
+                return;
+            }
+            this.tasks=JSON.parse(JSON.stringify(initialTasks));
+        },
+        resetData() { if(confirm('Biztosan törlöd az összes pipát?')){ localStorage.removeItem('armadilloTrackerV5'); this.tasks=JSON.parse(JSON.stringify(initialTasks)); } },
         exportLog() {
             const sep='═'.repeat(70), line='─'.repeat(70);
             let log=`ARMADILLO PÉNZÜGYI AUTOMATIZÁCIÓ — AUDIT LOG\n${sep}\nGenerálva: ${new Date().toLocaleString('hu-HU')}\nHaladás: ${this.overallProgress}% (${this.overallCompleted}/${this.tasks.length})\n`;
