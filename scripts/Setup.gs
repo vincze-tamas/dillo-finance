@@ -485,12 +485,8 @@ function _setupKimenoSzamlak_(sheet) {
  * Az alap sorok TestSetup.gs által kerülnek ide — ez csak fejlécet ellenőriz.
  */
 function _setupConfigTab_(sheet) {
-  // Ha már van fejléc, csak ellenőrizzük
-  if (sheet.getRange('A1').getValue() === 'Kulcs') {
-    console.log('  → CONFIG fejlécek már léteznek, kihagyva.');
-    return;
-  }
-
+  // Nincs korai return — _setHeaders_ maga kezeli az idempotenciát,
+  // és mindig frissíti a formázást (kék fejléc) akkor is ha értékek már léteznek.
   const headers = ['Kulcs', 'Érték', 'Státusz'];
   _setHeaders_(sheet, headers);
 
