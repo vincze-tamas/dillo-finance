@@ -407,7 +407,7 @@ function runUtilsTests() {
 
   // asciiTranslit
   const at = asciiTranslit('Árvíztűrő fúrógép');
-  console.log('asciiTranslit: ' + at + (at === 'Arviztiiro furogep' ? ' ✓' : ' ✗ HIBA'));
+  console.log('asciiTranslit: ' + at + (at === 'Arvizturo furogep' ? ' ✓' : ' ✗ HIBA'));
 
   // generateId
   const id = generateId('INV');
