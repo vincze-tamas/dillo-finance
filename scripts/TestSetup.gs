@@ -85,8 +85,7 @@ function _createStagingSheet_(rootFolder) {
 
   // Áthelyezés a TEST mappába (Drive-ban alapból a My Drive gyökerében jön létre)
   const file = DriveApp.getFileById(ss.getId());
-  rootFolder.addFile(file);
-  DriveApp.getRootFolder().removeFile(file);
+  file.moveTo(rootFolder);
 
   // 8 fül létrehozása — csak a struktúra, fejlécek nélkül (Setup.gs fogja kitölteni)
   const tabNames = [
