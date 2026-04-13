@@ -491,7 +491,7 @@ function _setupConfigTab_(sheet) {
   _setHeaders_(sheet, headers);
 
   // Státusz dropdown (C=3): kézzel állítja Péter / IT felelős
-  _setDropdown_(sheet, 3, ['ELLENŐRZENDŐ', 'VERIFIED'], false);
+  _setDropdown_(sheet, 3, ['ELLENŐRZENDŐ', 'VERIFIED']);
 
   _setColumnWidths_(sheet, [
     200,  // A  Kulcs
