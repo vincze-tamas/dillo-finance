@@ -78,17 +78,18 @@ function _setupTab_(ss, tabName, setupFn) {
  * @param {Array}    headers   - Fejléc cellák tömbje
  */
 function _setHeaders_(sheet, headers) {
-  if (sheet.getRange('A1').getValue() !== '') {
-    console.log('  → Fejlécek már léteznek (' + sheet.getName() + '), kihagyva.');
-    return;
-  }
   const range = sheet.getRange(1, 1, 1, headers.length);
-  range.setValues([headers]);
+  if (sheet.getRange('A1').getValue() === '') {
+    range.setValues([headers]);
+    console.log('  → Fejlécek beállítva: ' + headers.length + ' oszlop');
+  } else {
+    console.log('  → Fejlécek már léteznek (' + sheet.getName() + '), formázás frissítve.');
+  }
+  // Formázás mindig alkalmazva — idempotens, javítja a hiányzó kék fejlécet is
   range.setFontWeight('bold');
   range.setBackground('#4a86e8');
   range.setFontColor('#ffffff');
   sheet.setFrozenRows(1);
-  console.log('  → Fejlécek beállítva: ' + headers.length + ' oszlop');
 }
 
 /**
@@ -174,8 +175,11 @@ function _setupBejovoszamlak_(sheet) {
     'LOCK_TIMEOUT',
   ]);
 
-  // Deviza dropdown (J=10)
-  _setDropdown_(sheet, 10, ['HUF', 'EUR', 'USD'], false); // strict=false: más is beírható
+  // Deviza dropdown (J=10) — csak HUF/EUR, strict=true
+  _setDropdown_(sheet, 10, ['HUF', 'EUR']);
+
+  // Conditional formatting — Q oszlop (Státusz) alapján teljes sor színezés
+  _setConditionalFormatting_(sheet);
 
   _setColumnWidths_(sheet, [
     120,  // A  Számla ID
@@ -207,6 +211,46 @@ function _setupBejovoszamlak_(sheet) {
 }
 
 /**
+ * BEJÖVŐ_SZÁMLÁK conditional formatting — Q oszlop (Státusz) alapján teljes sor.
+ * Mindig újraállítja a szabályokat (idempotens: előbb törli, majd beírja).
+ * @param {Sheet} sheet
+ */
+function _setConditionalFormatting_(sheet) {
+  sheet.clearConditionalFormatRules();
+  const maxRows = Math.max(sheet.getMaxRows(), 1000);
+  const dataRange = sheet.getRange(2, 1, maxRows - 1, 23); // A2:W
+
+  const rules = [
+    // AI_HIBA — sötétpiros, fehér betű (legmagasabb prioritás)
+    ['AI_HIBA',        '#990000', '#ffffff'],
+    // LOCK_TIMEOUT — narancs
+    ['LOCK_TIMEOUT',   '#f9cb9c', '#7f4c00'],
+    // VISSZAUTASÍTVA — piros
+    ['VISSZAUTASÍTVA', '#f4c7c3', '#a61c00'],
+    // HIÁNYOS_PO — sárga
+    ['HIÁNYOS_PO',     '#fce8b2', '#7f6000'],
+    // JÓVÁHAGYVA — zöld
+    ['JÓVÁHAGYVA',     '#b7e1cd', '#0d652d'],
+    // BEKÖTEGELT — szürke
+    ['BEKÖTEGELT',     '#efefef', '#434343'],
+    // UTALVA — lila
+    ['UTALVA',         '#d9d2e9', '#4c1130'],
+    // BEÉRKEZETT — kék
+    ['BEÉRKEZETT',     '#c9daf8', '#1c4587'],
+  ].map(function(r) {
+    return SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied('=$Q2="' + r[0] + '"')
+      .setBackground(r[1])
+      .setFontColor(r[2])
+      .setRanges([dataRange])
+      .build();
+  });
+
+  sheet.setConditionalFormatRules(rules);
+  console.log('  → Conditional formatting beállítva (8 státusz-szabály, Q oszlop alapján)');
+}
+
+/**
  * SZÁMLA_TÉTELEK — 13 oszlop
  * K/L/M = PO adatok (tétel szintű), M = PO_VALIDÁLT onEdit számítja
  */
@@ -231,6 +275,16 @@ function _setupSzamlaTetelek_(sheet) {
   // PO_VALIDÁLT dropdown (M=13) — IGEN/NEM/N/A engedélyezett
   // N/A: ÁLLANDÓ és MEGOSZTOTT kategóriájú számlák tételei (SheetWriter._computePoValidalt_)
   _setDropdown_(sheet, 13, ['IGEN', 'NEM', 'N/A']);
+
+  // PO_CONFIDENCE numerikus validáció (K=11): 0–100
+  const kRange = sheet.getRange(2, 11, Math.max(sheet.getMaxRows() - 1, 999), 1);
+  kRange.setDataValidation(
+    SpreadsheetApp.newDataValidation()
+      .requireNumberBetween(0, 100)
+      .setAllowInvalid(false)
+      .setHelpText('PO_CONFIDENCE: 0–100 közötti egész szám (Gemini adja)')
+      .build()
+  );
 
   _setColumnWidths_(sheet, [
     120,  // A  Számla ID
@@ -266,6 +320,16 @@ function _setupProjektek_(sheet) {
     'Projekt vezető',        // G  7
   ];
   _setHeaders_(sheet, headers);
+
+  // Projektszám regex (A=1): ^[A-Z]{3,4}[0-9]{4}$
+  const aRange = sheet.getRange(2, 1, Math.max(sheet.getMaxRows() - 1, 999), 1);
+  aRange.setDataValidation(
+    SpreadsheetApp.newDataValidation()
+      .requireTextMatchesPattern('^[A-Z]{3,4}[0-9]{4}$')
+      .setAllowInvalid(false)
+      .setHelpText('Projektszám formátum: 3–4 nagybetű + 4 szám, pl. FCA2601, IMME2601')
+      .build()
+  );
 
   // Státusz dropdown (F=6)
   _setDropdown_(sheet, 6, ['AKTÍV', 'LEZÁRT', 'FELFÜGGESZTETT']);
