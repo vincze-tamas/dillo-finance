@@ -322,10 +322,11 @@ function _setupProjektek_(sheet) {
   _setHeaders_(sheet, headers);
 
   // Projektszám regex (A=1): ^[A-Z]{3,4}[0-9]{4}$
+  // requireTextMatchesPattern nem létezik GAS-ban → requireFormulaSatisfied + REGEXMATCH
   const aRange = sheet.getRange(2, 1, Math.max(sheet.getMaxRows() - 1, 999), 1);
   aRange.setDataValidation(
     SpreadsheetApp.newDataValidation()
-      .requireTextMatchesPattern('^[A-Z]{3,4}[0-9]{4}$')
+      .requireFormulaSatisfied('=REGEXMATCH(A2,"^[A-Z]{3,4}[0-9]{4}$")')
       .setAllowInvalid(false)
       .setHelpText('Projektszám formátum: 3–4 nagybetű + 4 szám, pl. FCA2601, IMME2601')
       .build()
