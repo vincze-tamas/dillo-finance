@@ -60,10 +60,6 @@ function processInvoiceWithGemini(pdfBlob, metadata) {
     console.log('  OCR kész: ' + extracted.szallito_nev +
       ' | ' + extracted.szamlaszam + ' | ' + extracted.kelt);
 
-    // Audit: Gemini sikeresen feldolgozta a PDF-et (szamlaId még nincs → fájlnév az ID)
-    logAuditScript_('OCR_COMPLETED', metadata.fileName, 'Gemini OCR', '',
-      (extracted.szallito_nev || '?') + ' | ' + (extracted.szamlaszam || '?'));
-
   } catch (err) {
     console.error('GeminiOCR hiba: ' + err.message);
     // Audit: OCR sikertelen
@@ -91,6 +87,10 @@ function processInvoiceWithGemini(pdfBlob, metadata) {
     // ── 7. SheetWriter hívás — atomikus SSOT írás
     const szamlaId = writeInvoiceToSheet(extracted, metadata, poAgg, statusz, kategoria);
     console.log('  SheetWriter: sikeres → ' + szamlaId);
+
+    // Audit: OCR + SheetWriter sikeresen lefutott — szamlaId már ismert, pontos rowId
+    logAuditScript_('OCR_COMPLETED', szamlaId, 'Gemini OCR', '',
+      (extracted.szallito_nev || '?') + ' | ' + (extracted.szamlaszam || '?'));
 
     // ── 8. Chat értesítő (Ági / Admin)  [MI-01: volt dupla 8-as, javítva → 8 + 9]
     try {

@@ -42,12 +42,12 @@ function writeInvoiceToSheet(extracted, metadata, poAgg, statusz, kategoria) {
     console.log('SheetWriter: ' + szamlaId + ' sikeresen írva (' +
       extracted.tetelek.length + ' tétel)');
 
-    // Audit: számla beérkezett az SSOT-ba
-    logAuditScript_('INVOICE_RECEIVED', szamlaId, 'BEJÖVŐ_SZÁMLÁK', '', statusz);
-
   } finally {
     lock.releaseLock();
   }
+
+  // Audit a lockon KÍVÜL — nem kell szeriális az üzleti írással
+  logAuditScript_('INVOICE_RECEIVED', szamlaId, 'BEJÖVŐ_SZÁMLÁK', '', statusz);
 
   return szamlaId;
 }
@@ -66,22 +66,24 @@ function writeInvoiceToSheet(extracted, metadata, poAgg, statusz, kategoria) {
  * @param {string} errorMessage
  */
 function writeInvoiceError(metadata, statuszKod, errorMessage) {
+  let szamlaId;
   try {
     const ss   = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
     const lock = acquireLock();
     try {
-      const sheet    = ss.getSheetByName(CONFIG.TABS.BEJOVO_SZAMLAK);
-      const szamlaId = generateId('ERR');
-      const row      = _buildErrorRow_(szamlaId, metadata, statuszKod, errorMessage);
+      const sheet = ss.getSheetByName(CONFIG.TABS.BEJOVO_SZAMLAK);
+      szamlaId    = generateId('ERR');
+      const row   = _buildErrorRow_(szamlaId, metadata, statuszKod, errorMessage);
       sheet.appendRow(row);
       console.log('SheetWriter (hiba): ' + szamlaId + ' → ' + statuszKod);
-
-      // Audit: hibás feldolgozás sor beírva
-      logAuditScript_('INVOICE_ERROR', szamlaId, 'BEJÖVŐ_SZÁMLÁK', '',
-        statuszKod + ' | ' + (errorMessage || '').substring(0, 200));
     } finally {
       lock.releaseLock();
     }
+
+    // Audit a lockon KÍVÜL — nem kell szeriális az üzleti írással
+    logAuditScript_('INVOICE_ERROR', szamlaId, 'BEJÖVŐ_SZÁMLÁK', '',
+      statuszKod + ' | ' + (errorMessage || '').substring(0, 200));
+
   } catch (e) {
     // Ha ez is hibázik, már csak logolni tudunk
     console.error('writeInvoiceError sikertelen: ' + e.message);

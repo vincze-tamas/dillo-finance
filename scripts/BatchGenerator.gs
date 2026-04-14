@@ -307,6 +307,9 @@ function _updateSSOT_(kotegId, rows, osszesenHuf, utalasDate, driveFileId, drive
   const ss   = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
   const lock = acquireLock();
 
+  // Audit tételek gyűjtése — a lockon KÍVÜL írjuk a logot
+  const auditItems = [];
+
   try {
     // ── KÖTEGEK új sor
     const kotegSheet = ss.getSheetByName(CONFIG.TABS.KOTEGEK);
@@ -340,9 +343,8 @@ function _updateSSOT_(kotegId, rows, osszesenHuf, utalasDate, driveFileId, drive
         return;
       }
       bejovSheet.getRange(r.rowIndex, CONFIG.COLS.BEJOVO.KOTEG_ID).setValue(kotegId);
-
-      // Audit: számla batch-be rendelve — event marker a köteg hozzárendeléshez
-      logAuditScript_('BATCH_ASSIGNED', r.szamlaId, 'KOTEG_ID', '', kotegId);
+      // Összegyűjtjük — a lockon kívül írjuk az audit logba
+      auditItems.push(r.szamlaId);
     });
 
     console.log('SSOT frissítve: KÖTEGEK + ' + rows.length + ' BEJÖVŐ_SZÁMLÁK sor');
@@ -350,6 +352,11 @@ function _updateSSOT_(kotegId, rows, osszesenHuf, utalasDate, driveFileId, drive
   } finally {
     lock.releaseLock();
   }
+
+  // Audit a lockon KÍVÜL — minden sikeresen batch-be rendelt számlához 1 sor
+  auditItems.forEach(function(szamlaId) {
+    logAuditScript_('BATCH_ASSIGNED', szamlaId, 'KOTEG_ID', '', kotegId);
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

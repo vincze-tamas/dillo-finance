@@ -109,7 +109,7 @@ function onEditInstallable(e) {
   const auditAction = (function() {
     if (tabName === CONFIG.TABS.BEJOVO_SZAMLAK) {
       // UTALVA → PAYMENT_CONFIRMED (Péter manuálisan zárja le a köteg utalást)
-      return String(e.value || '') === 'UTALVA' ? 'PAYMENT_CONFIRMED' : 'STATUSZ_VALTOZAS';
+      return String(e.value || '').trim().toUpperCase() === 'UTALVA' ? 'PAYMENT_CONFIRMED' : 'STATUSZ_VALTOZAS';
     }
     if (tabName === CONFIG.TABS.SZAMLA_TETELEK)  return 'PO_MODOSITAS';
     if (tabName === CONFIG.TABS.PROJEKTEK)        return 'PROJEKT_MODOSITAS';
