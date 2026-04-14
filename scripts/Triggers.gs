@@ -319,7 +319,6 @@ function _onBejovoszamlaStatuszChange_(sheet, row, ujStatusz, regiStatusz) {
   const szallitoNev       = String(rowData[c.SZALLITO_NEV       - 1] || '');
   const osszeg            = Number(rowData[c.OSSZEG_BRUTTO      - 1] || 0);
   const deviza            = String(rowData[c.DEVIZA             - 1] || 'HUF');
-  const jovahagyo         = String(rowData[c.JOVAHAGYO          - 1] || '');
   const visszautasitasOka = String(rowData[c.VISSZAUTASITAS_OKA - 1] || '');
 
   // Ha a cella korábban üres volt (pl. első beírás), az e.oldValue üres string lesz
@@ -327,9 +326,10 @@ function _onBejovoszamlaStatuszChange_(sheet, row, ujStatusz, regiStatusz) {
   console.log('Státusz változás: ' + szamlaId + ' | ' +
     regiStatuszDisplay + ' → ' + ujStatusz);
 
-  // JÓVÁHAGYÓ emailje automatikus beírása minden státuszváltásnál
-  // (aki változtatta a státuszt, annak emailje kerül R oszlopba)
+  // JÓVÁHAGYÓ emailje: az aktív felhasználó emailje kerül a sheet-be ÉS a Chat üzenetbe
+  // (aki változtatta a státuszt, annak emailje — sheet-ből olvasva még üres lenne)
   const userEmail = Session.getActiveUser().getEmail();
+  const jovahagyo = userEmail || String(rowData[c.JOVAHAGYO - 1] || '');
   if (userEmail) {
     sheet.getRange(row, c.JOVAHAGYO).setValue(userEmail);
   }
