@@ -41,7 +41,8 @@ function setupSSOT() {
   _setupTab_(ss, CONFIG.TABS.KOTEGEK,          _setupKotegek_);
   _setupTab_(ss, CONFIG.TABS.KIMENO_SZAMLAK,   _setupKimenoSzamlak_);
   _setupTab_(ss, CONFIG.TABS.CONFIG,           _setupConfigTab_);
-  _setupTab_(ss, CONFIG.TABS.ALLOKACIOK_TAB,       _setupAllokaciok_);
+  _setupTab_(ss, CONFIG.TABS.ALLOKACIOK_TAB,   _setupAllokaciok_);
+  _setupTab_(ss, CONFIG.TABS.AUDIT_LOG,        _setupAuditLog_);
 
   // SZÁMLA_TÉTELEK J dropdown frissítése a PROJEKTEK adatai alapján.
   // Ha PROJEKTEK még üres, a refreshPODropdown_() csendesen kihagyja.
@@ -555,6 +556,54 @@ function _setupAllokaciok_(sheet) {
   console.log('  → ALLOKÁCIÓK kész (8 oszlop, ALLOKÁCIÓ_TÍPUS dropdown beállítva)');
 }
 
+/**
+ * AUDIT_LOG — 7 oszlop
+ * Minden szerkesztési esemény naplója. Csak appendRow() írja — kézzel nem szerkesztendő.
+ * Idempotens: fejléc + formázás, adatok érintetlenek.
+ */
+function _setupAuditLog_(sheet) {
+  const headers = [
+    'Időbélyeg',      // A  1  datetime
+    'Felhasználó',    // B  2  email
+    'Művelet',        // C  3  pl. STATUSZ_VALTOZAS, KOTEG_ID_OVERWRITE_ATTEMPT
+    'Sor azonosító',  // D  4  pl. INV-20260408-001 vagy "sor 5"
+    'Mező',           // E  5  oszlop fejléc neve
+    'Előző érték',    // F  6
+    'Új érték',       // G  7
+  ];
+  _setHeaders_(sheet, headers);
+
+  // A oszlop: datetime formátum
+  sheet.getRange(2, 1, Math.max(sheet.getMaxRows() - 1, 999), 1)
+    .setNumberFormat('yyyy-mm-dd hh:mm:ss');
+
+  _setColumnWidths_(sheet, [
+    160,  // A  Időbélyeg
+    220,  // B  Felhasználó
+    250,  // C  Művelet
+    200,  // D  Sor azonosító
+    180,  // E  Mező
+    180,  // F  Előző érték
+    180,  // G  Új érték
+  ]);
+
+  // Fejléc magyarázat
+  sheet.getRange('A1').setNote(
+    'Automatikusan töltődik — kézzel ne szerkeszd.\n' +
+    'Minden BEJÖVŐ_SZÁMLÁK / SZÁMLA_TÉTELEK / PROJEKTEK / PARTNEREK\n' +
+    'szerkesztési esemény ide kerül az onEditInstallable triggerből.\n\n' +
+    'Műveletek:\n' +
+    '  STATUSZ_VALTOZAS — Q oszlop változás\n' +
+    '  PO_MODOSITAS — SZÁMLA_TÉTELEK J/K oszlop\n' +
+    '  PROJEKT_MODOSITAS — PROJEKTEK A oszlop\n' +
+    '  PARTNER_MODOSITAS — PARTNEREK H oszlop\n' +
+    '  CELLAMODOSITAS — egyéb figyelt mező\n' +
+    '  KOTEG_ID_OVERWRITE_ATTEMPT — tiltott felülírási kísérlet (visszaállítva)'
+  );
+
+  console.log('  → AUDIT_LOG kész (7 oszlop, datetime formátum)');
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PO DROPDOWN KARBANTARTÁS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -683,7 +732,8 @@ function verifySSOT() {
     { name: CONFIG.TABS.KOTEGEK,        cols: 9  },
     { name: CONFIG.TABS.KIMENO_SZAMLAK, cols: 11 },
     { name: CONFIG.TABS.CONFIG,         cols: 3  },
-    { name: CONFIG.TABS.ALLOKACIOK_TAB,     cols: 8  },
+    { name: CONFIG.TABS.ALLOKACIOK_TAB, cols: 8  },
+    { name: CONFIG.TABS.AUDIT_LOG,      cols: 7  },
   ];
 
   let allOk = true;
@@ -709,7 +759,7 @@ function verifySSOT() {
 
   if (allOk) {
     console.log('══════════════════════════════════════');
-    console.log('✅ SSOT sheet rendben — 8/8 fül OK');
+    console.log('✅ SSOT sheet rendben — 9/9 fül OK');
   } else {
     console.log('══════════════════════════════════════');
     console.log('⚠️  Hibák találhatók — futtasd le: setupSSOT()');
@@ -766,6 +816,7 @@ function protectSSOT() {
     CONFIG.TABS.KIMENO_SZAMLAK,
     CONFIG.TABS.CONFIG,
     CONFIG.TABS.ALLOKACIOK_TAB,
+    CONFIG.TABS.AUDIT_LOG,      // csak appendRow() írja — kézzel nem szerkesztendő
   ];
 
   systemTabs.forEach(function(tabName) {

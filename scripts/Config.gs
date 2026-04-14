@@ -157,6 +157,7 @@ const CONFIG = (function () {
       KIMENO_SZAMLAK:  'KIMENŐ_SZÁMLÁK',
       CONFIG:          'CONFIG',
       ALLOKACIOK_TAB:  'ALLOKÁCIÓK',
+      AUDIT_LOG:       'AUDIT_LOG',
     },
 
     // ── Oszlop indexek (1-alapú, getRange() és getLastColumn() kompatibilis)

@@ -57,6 +57,9 @@ function onEditInstallable(e) {
       const oldVal = String(e.oldValue || '').trim();
       const newVal = String(value       || '').trim();
       if (oldVal !== '' && oldVal !== newVal) {
+        // Audit log ELŐBB — hogy a próbált értéket rögzítsük, nem a visszaállítottat
+        logAudit_(e, 'KOTEG_ID_OVERWRITE_ATTEMPT');
+
         e.range.setValue(oldVal); // visszaállítás
 
         // Ki próbálta meg?
@@ -90,6 +93,18 @@ function onEditInstallable(e) {
   } else if (tabName === CONFIG.TABS.PARTNEREK) {
     if (col !== CONFIG.COLS.PARTNER.ALLOKACIOASSABLON) return; // H oszlop
   }
+
+  // ── Audit log — minden figyelt szerkesztés rögzítve (AuditLog.gs)
+  // A KOTEG_ID eset külön loggolódik fentebb (KOTEG_ID_OVERWRITE_ATTEMPT),
+  // ide már nem jut el (return után). Minden más eset itt naplózódik.
+  const auditAction = (function() {
+    if (tabName === CONFIG.TABS.BEJOVO_SZAMLAK)  return 'STATUSZ_VALTOZAS';
+    if (tabName === CONFIG.TABS.SZAMLA_TETELEK)  return 'PO_MODOSITAS';
+    if (tabName === CONFIG.TABS.PROJEKTEK)        return 'PROJEKT_MODOSITAS';
+    if (tabName === CONFIG.TABS.PARTNEREK)        return 'PARTNER_MODOSITAS';
+    return 'CELLAMODOSITAS';
+  })();
+  logAudit_(e, auditAction);
 
   // ── Routing fülönként
   try {
