@@ -565,53 +565,60 @@ function _setupAuditLog_(sheet) {
   const headers = [
     'Időbélyeg',      // A  1  datetime
     'Felhasználó',    // B  2  email
-    'Művelet',        // C  3  pl. STATUSZ_VALTOZAS, KOTEG_ID_OVERWRITE_ATTEMPT
-    'Sor azonosító',  // D  4  pl. INV-20260408-001 vagy "sor 5"
-    'Mező',           // E  5  oszlop fejléc neve
-    'Előző érték',    // F  6
-    'Új érték',       // G  7
+    'Forrás',         // C  3  FELHASZNALO / RENDSZER
+    'Entitás',        // D  4  SZAMLA / PROJEKT / PARTNER / stb.
+    'Művelet',        // E  5  AUDIT_MUVELET értéke
+    'Sor azonosító',  // F  6  pl. INV-20260408-001 vagy "sor 5"
+    'Mező',           // G  7  oszlop fejléc neve
+    'Előző érték',    // H  8
+    'Új érték',       // I  9
   ];
   _setHeaders_(sheet, headers);
 
-  // A oszlop: datetime formátum
+  // A oszlop: datetime formátum — 2026-04-14 21:11:01
   sheet.getRange(2, 1, Math.max(sheet.getMaxRows() - 1, 999), 1)
     .setNumberFormat('yyyy-mm-dd hh:mm:ss');
 
   _setColumnWidths_(sheet, [
-    160,  // A  Időbélyeg
+    165,  // A  Időbélyeg
     220,  // B  Felhasználó
-    250,  // C  Művelet
-    200,  // D  Sor azonosító
-    180,  // E  Mező
-    180,  // F  Előző érték
-    180,  // G  Új érték
+    110,  // C  Forrás
+    130,  // D  Entitás
+    250,  // E  Művelet
+    200,  // F  Sor azonosító
+    160,  // G  Mező
+    160,  // H  Előző érték
+    160,  // I  Új érték
   ]);
 
   // Fejléc magyarázat
   sheet.getRange('A1').setNote(
-    'Event-driven audit ledger — kézzel NE szerkeszd!\n' +
-    'Szerkesztési kísérlet visszaállítva + naplózva (AUDIT_LOG_TAMPER_ATTEMPT).\n\n' +
-    'USER EDIT események (onEditInstallable):\n' +
-    '  STATUSZ_VALTOZAS           — BEJÖVŐ_SZÁMLÁK Q oszlop (nem UTALVA)\n' +
-    '  PAYMENT_CONFIRMED          — BEJÖVŐ_SZÁMLÁK Q → UTALVA\n' +
-    '  SZAMLA_MODOSITAS           — BEJÖVŐ_SZÁMLÁK egyéb oszlop kézzel javítva\n' +
-    '  PO_MODOSITAS               — SZÁMLA_TÉTELEK J/K oszlop\n' +
-    '  TETEL_MODOSITAS            — SZÁMLA_TÉTELEK egyéb oszlop\n' +
-    '  PROJEKT_MODOSITAS          — PROJEKTEK A oszlop\n' +
-    '  PARTNER_MODOSITAS          — PARTNEREK H oszlop\n' +
-    '  KOTEG_MODOSITAS            — KÖTEGEK fül\n' +
-    '  KIMENO_MODOSITAS           — KIMENŐ_SZÁMLÁK fül\n' +
-    '  CONFIG_MODOSITAS           — CONFIG fül (⚠️ pénzügyi kockázat!)\n' +
-    '  ALLOKACIO_MODOSITAS        — ALLOKÁCIÓK fül\n' +
-    '  CELLAMODOSITAS             — egyéb üzleti fül\n' +
-    '  KOTEG_ID_OVERWRITE_ATTEMPT — KOTEG_ID tiltott felülírás (visszaállítva)\n' +
-    '  AUDIT_LOG_TAMPER_ATTEMPT   — ez a fül szerkesztési kísérlet (visszaállítva)\n\n' +
-    'SCRIPT események (logAuditScript_):\n' +
-    '  INVOICE_RECEIVED  — SheetWriter: számla beírva\n' +
-    '  INVOICE_ERROR     — SheetWriter: AI_HIBA/LOCK_TIMEOUT sor\n' +
-    '  OCR_COMPLETED     — GeminiOCR: PDF feldolgozva\n' +
-    '  OCR_FAILED        — GeminiOCR: Gemini hiba\n' +
-    '  BATCH_ASSIGNED    — BatchGenerator: KOTEG_ID beírva'
+    'Eseményvezérelt auditnapló — kézzel NE szerkeszd!\n' +
+    'Szerkesztési kísérlet visszaállítva + naplózva.\n\n' +
+    'Forrás értékek: FELHASZNALO | RENDSZER\n\n' +
+    'Entitás értékek: SZAMLA | SZAMLA_TETEL | PROJEKT | PARTNER |\n' +
+    '                 KOTEG | KIMENO_SZAMLA | KONFIG | ALLOKACIO\n\n' +
+    'Felhasználói szerkesztés (Forrás=FELHASZNALO):\n' +
+    '  STATUSZ_VALTOZAS                 — BEJÖVŐ_SZÁMLÁK Q (nem fizetés megerősítés)\n' +
+    '  FIZETES_MEGEROSITVE              — BEJÖVŐ_SZÁMLÁK Q → UTALVA\n' +
+    '  SZAMLA_MODOSITAS                 — BEJÖVŐ_SZÁMLÁK egyéb oszlop\n' +
+    '  PO_MODOSITAS                     — SZÁMLA_TÉTELEK J/K oszlop\n' +
+    '  TETEL_MODOSITAS                  — SZÁMLA_TÉTELEK egyéb oszlop\n' +
+    '  PROJEKT_MODOSITAS                — PROJEKTEK A oszlop\n' +
+    '  PARTNER_MODOSITAS                — PARTNEREK H oszlop\n' +
+    '  KOTEG_MODOSITAS                  — KÖTEGEK fül\n' +
+    '  KIMENO_SZAMLA_MODOSITAS          — KIMENŐ_SZÁMLÁK fül\n' +
+    '  KONFIG_MODOSITAS                 — CONFIG fül (⚠️ pénzügyi kockázat!)\n' +
+    '  ALLOKACIO_MODOSITAS              — ALLOKÁCIÓK fül\n' +
+    '  CELLA_MODOSITAS                  — egyéb üzleti fül\n' +
+    '  KOTEG_ID_FELULIRAS_KISERLET      — KOTEG_ID tiltott felülírás (visszaállítva)\n' +
+    '  AUDITNAPLO_SZERKESZTESI_KISERLET — ez a fül szerkesztési kísérlet (visszaállítva)\n\n' +
+    'Script esemény (Forrás=RENDSZER):\n' +
+    '  SZAMLA_BEERKEZETT   — SheetWriter: számla beírva\n' +
+    '  SZAMLA_HIBA         — SheetWriter: AI_HIBA/LOCK_TIMEOUT sor\n' +
+    '  OCR_KESZ            — GeminiOCR: PDF feldolgozva\n' +
+    '  OCR_HIBA            — GeminiOCR: Gemini hiba\n' +
+    '  KOTEG_HOZZARENDELVE — BatchGenerator: KOTEG_ID beírva'
   );
 
   // AUDIT_LOG fül védelme: csak a script tulajdonos szerkesztheti

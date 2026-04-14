@@ -63,8 +63,8 @@ function processInvoiceWithGemini(pdfBlob, metadata) {
   } catch (err) {
     console.error('GeminiOCR hiba: ' + err.message);
     // Audit: OCR sikertelen
-    logAuditScript_('OCR_FAILED', metadata.fileName, 'Gemini OCR', '',
-      err.message.substring(0, 200));
+    logAuditScript_(AUDIT_MUVELET.OCR_HIBA, AUDIT_ENTITAS.SZAMLA,
+      metadata.fileName, 'Gemini OCR', '', err.message.substring(0, 200));
     // AI_HIBA státuszú sort írunk a sheet-be
     writeInvoiceError(metadata, 'AI_HIBA', err.message);
     notifyAdmin('GeminiOCR feldolgozási hiba', metadata.fileName + ': ' + err.message, err);
@@ -89,7 +89,8 @@ function processInvoiceWithGemini(pdfBlob, metadata) {
     console.log('  SheetWriter: sikeres → ' + szamlaId);
 
     // Audit: OCR + SheetWriter sikeresen lefutott — szamlaId már ismert, pontos rowId
-    logAuditScript_('OCR_COMPLETED', szamlaId, 'Gemini OCR', '',
+    logAuditScript_(AUDIT_MUVELET.OCR_KESZ, AUDIT_ENTITAS.SZAMLA,
+      szamlaId, 'Gemini OCR', '',
       (extracted.szallito_nev || '?') + ' | ' + (extracted.szamlaszam || '?'));
 
     // ── 8. Chat értesítő (Ági / Admin)  [MI-01: volt dupla 8-as, javítva → 8 + 9]

@@ -355,7 +355,8 @@ function _updateSSOT_(kotegId, rows, osszesenHuf, utalasDate, driveFileId, drive
 
   // Audit a lockon KÍVÜL — minden sikeresen batch-be rendelt számlához 1 sor
   auditItems.forEach(function(szamlaId) {
-    logAuditScript_('BATCH_ASSIGNED', szamlaId, 'KOTEG_ID', '', kotegId);
+    logAuditScript_(AUDIT_MUVELET.KOTEG_HOZZARENDELVE, AUDIT_ENTITAS.SZAMLA,
+      szamlaId, 'KOTEG_ID', '', kotegId);
   });
 }
 

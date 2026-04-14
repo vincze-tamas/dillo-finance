@@ -47,7 +47,8 @@ function writeInvoiceToSheet(extracted, metadata, poAgg, statusz, kategoria) {
   }
 
   // Audit a lockon KÍVÜL — nem kell szeriális az üzleti írással
-  logAuditScript_('INVOICE_RECEIVED', szamlaId, 'BEJÖVŐ_SZÁMLÁK', '', statusz);
+  logAuditScript_(AUDIT_MUVELET.SZAMLA_BEERKEZETT, AUDIT_ENTITAS.SZAMLA,
+    szamlaId, 'BEJÖVŐ_SZÁMLÁK', '', statusz);
 
   return szamlaId;
 }
@@ -81,7 +82,8 @@ function writeInvoiceError(metadata, statuszKod, errorMessage) {
     }
 
     // Audit a lockon KÍVÜL — nem kell szeriális az üzleti írással
-    logAuditScript_('INVOICE_ERROR', szamlaId, 'BEJÖVŐ_SZÁMLÁK', '',
+    logAuditScript_(AUDIT_MUVELET.SZAMLA_HIBA, AUDIT_ENTITAS.SZAMLA,
+      szamlaId, 'BEJÖVŐ_SZÁMLÁK', '',
       statuszKod + ' | ' + (errorMessage || '').substring(0, 200));
 
   } catch (e) {

@@ -56,7 +56,7 @@ function onEditInstallable(e) {
       e.range.clearContent();
     }
     // Kísérlet naplózása (logAudit_ → getActiveUser, e event objektum)
-    logAudit_(e, 'AUDIT_LOG_TAMPER_ATTEMPT');
+    logAudit_(e, AUDIT_MUVELET.AUDITNAPLO_SZERKESZTESI_KISERLET);
     SpreadsheetApp.getUi().alert(
       '⛔ AUDIT_LOG nem szerkeszthető!\n\n' +
       'Az auditnapló kizárólag automatikusan kerül kitöltésre.\n' +
@@ -107,7 +107,7 @@ function onEditInstallable(e) {
     const newVal = String(value       || '').trim();
     if (oldVal !== '' && oldVal !== newVal) {
       // Audit ELŐBB — a próbált értéket rögzítjük, nem a visszaállítottat
-      logAudit_(e, 'KOTEG_ID_OVERWRITE_ATTEMPT');
+      logAudit_(e, AUDIT_MUVELET.KOTEG_ID_FELULIRAS_KISERLET);
       e.range.setValue(oldVal); // visszaállítás
       const who    = Session.getActiveUser().getEmail() || 'ismeretlen';
       const logMsg = 'KOTEG_ID felülírási kísérlet | ' + who +
@@ -175,22 +175,22 @@ function _getAuditAction_(tabName, col, e) {
     if (col === CONFIG.COLS.BEJOVO.STATUSZ) {
       // UTALVA → PAYMENT_CONFIRMED (Péter zárja le a köteg utalást)
       return String(e.value || '').trim().toUpperCase() === 'UTALVA'
-        ? 'PAYMENT_CONFIRMED' : 'STATUSZ_VALTOZAS';
+        ? AUDIT_MUVELET.FIZETES_MEGEROSITVE : AUDIT_MUVELET.STATUSZ_VALTOZAS;
     }
-    return 'SZAMLA_MODOSITAS'; // egyéb oszlop (pl. kézzel javított összeg, PO_REASONING)
+    return AUDIT_MUVELET.SZAMLA_MODOSITAS; // egyéb oszlop (pl. kézzel javított összeg, PO_REASONING)
   }
   if (tabName === CONFIG.TABS.SZAMLA_TETELEK) {
     // PO-specifikus oszlopok: saját típus a szűrhetőség miatt
     return (col === CONFIG.COLS.TETEL.PO || col === CONFIG.COLS.TETEL.PO_CONFIDENCE)
-      ? 'PO_MODOSITAS' : 'TETEL_MODOSITAS';
+      ? AUDIT_MUVELET.PO_MODOSITAS : AUDIT_MUVELET.TETEL_MODOSITAS;
   }
-  if (tabName === CONFIG.TABS.PROJEKTEK)      return 'PROJEKT_MODOSITAS';
-  if (tabName === CONFIG.TABS.PARTNEREK)      return 'PARTNER_MODOSITAS';
-  if (tabName === CONFIG.TABS.KOTEGEK)        return 'KOTEG_MODOSITAS';
-  if (tabName === CONFIG.TABS.KIMENO_SZAMLAK) return 'KIMENO_MODOSITAS';
-  if (tabName === CONFIG.TABS.CONFIG)         return 'CONFIG_MODOSITAS';  // ⚠️ PÉNZÜGYI KOCKÁZAT
-  if (tabName === CONFIG.TABS.ALLOKACIOK_TAB) return 'ALLOKACIO_MODOSITAS';
-  return 'CELLAMODOSITAS';
+  if (tabName === CONFIG.TABS.PROJEKTEK)      return AUDIT_MUVELET.PROJEKT_MODOSITAS;
+  if (tabName === CONFIG.TABS.PARTNEREK)      return AUDIT_MUVELET.PARTNER_MODOSITAS;
+  if (tabName === CONFIG.TABS.KOTEGEK)        return AUDIT_MUVELET.KOTEG_MODOSITAS;
+  if (tabName === CONFIG.TABS.KIMENO_SZAMLAK) return AUDIT_MUVELET.KIMENO_SZAMLA_MODOSITAS;
+  if (tabName === CONFIG.TABS.CONFIG)         return AUDIT_MUVELET.KONFIG_MODOSITAS; // ⚠️ PÉNZÜGYI KOCKÁZAT
+  if (tabName === CONFIG.TABS.ALLOKACIOK_TAB) return AUDIT_MUVELET.ALLOKACIO_MODOSITAS;
+  return AUDIT_MUVELET.CELLA_MODOSITAS;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
