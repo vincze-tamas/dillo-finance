@@ -10,13 +10,20 @@
  * Minden állapotváltozás → audit event. Nem csak user editek.
  *
  * User edit action típusok (logAudit_):
- *   STATUSZ_VALTOZAS          — BEJÖVŐ_SZÁMLÁK Q oszlop (nem UTALVA)
- *   PAYMENT_CONFIRMED         — BEJÖVŐ_SZÁMLÁK Q → UTALVA
- *   PO_MODOSITAS              — SZÁMLA_TÉTELEK J vagy K oszlop
- *   PROJEKT_MODOSITAS         — PROJEKTEK A oszlop
- *   PARTNER_MODOSITAS         — PARTNEREK H oszlop
- *   CELLAMODOSITAS            — egyéb figyelt mező
+ *   STATUSZ_VALTOZAS           — BEJÖVŐ_SZÁMLÁK Q oszlop (nem UTALVA)
+ *   PAYMENT_CONFIRMED          — BEJÖVŐ_SZÁMLÁK Q → UTALVA
+ *   SZAMLA_MODOSITAS           — BEJÖVŐ_SZÁMLÁK egyéb oszlop kézzel javítva
+ *   PO_MODOSITAS               — SZÁMLA_TÉTELEK J vagy K oszlop
+ *   TETEL_MODOSITAS            — SZÁMLA_TÉTELEK egyéb oszlop
+ *   PROJEKT_MODOSITAS          — PROJEKTEK A oszlop
+ *   PARTNER_MODOSITAS          — PARTNEREK H oszlop
+ *   KOTEG_MODOSITAS            — KÖTEGEK fül bármely oszlop
+ *   KIMENO_MODOSITAS           — KIMENŐ_SZÁMLÁK fül bármely oszlop
+ *   CONFIG_MODOSITAS           — CONFIG fül (⚠️ pénzügyi kockázat — IT figyeli!)
+ *   ALLOKACIO_MODOSITAS        — ALLOKÁCIÓK fül bármely oszlop
+ *   CELLAMODOSITAS             — egyéb (nem kategorizált) üzleti fül
  *   KOTEG_ID_OVERWRITE_ATTEMPT — KOTEG_ID felülírási kísérlet (visszaállítva)
+ *   AUDIT_LOG_TAMPER_ATTEMPT   — AUDIT_LOG fül szerkesztési kísérlet (visszaállítva)
  *
  * Script event action típusok (logAuditScript_):
  *   INVOICE_RECEIVED          — SheetWriter: számla sikeresen beírva
@@ -203,6 +210,30 @@ function _getRowIdentifier_(sheet, row, e) {
     if (tabName === CONFIG.TABS.PARTNEREK) {
       const nev = sheet.getRange(row, CONFIG.COLS.PARTNER.NEV).getValue();
       return nev ? String(nev) : ('sor ' + row);
+    }
+
+    if (tabName === CONFIG.TABS.KOTEGEK) {
+      // KÖTEGEK A oszlop = Köteg ID (pl. KOTEG-20260409-1)
+      const kotegId = sheet.getRange(row, 1).getValue();
+      return kotegId ? String(kotegId) : ('sor ' + row);
+    }
+
+    if (tabName === CONFIG.TABS.KIMENO_SZAMLAK) {
+      // KIMENŐ_SZÁMLÁK A oszlop = számla azonosító
+      const szamlaId = sheet.getRange(row, 1).getValue();
+      return szamlaId ? String(szamlaId) : ('sor ' + row);
+    }
+
+    if (tabName === CONFIG.TABS.CONFIG) {
+      // CONFIG fül A oszlop = paraméter neve (pl. PO_CONFIDENCE_THRESHOLD)
+      const paramNev = sheet.getRange(row, 1).getValue();
+      return paramNev ? String(paramNev) : ('sor ' + row);
+    }
+
+    if (tabName === CONFIG.TABS.ALLOKACIOK_TAB) {
+      // ALLOKÁCIÓK A oszlop = Allokáció ID (pl. ALK-20260408-001-1)
+      const allocId = sheet.getRange(row, CONFIG.COLS.ALLOKACIO.ALLOKACIO_ID).getValue();
+      return allocId ? String(allocId) : ('sor ' + row);
     }
 
   } catch (_) {

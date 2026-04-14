@@ -589,15 +589,23 @@ function _setupAuditLog_(sheet) {
 
   // Fejléc magyarázat
   sheet.getRange('A1').setNote(
-    'Event-driven audit ledger — kézzel ne szerkeszd.\n\n' +
+    'Event-driven audit ledger — kézzel NE szerkeszd!\n' +
+    'Szerkesztési kísérlet visszaállítva + naplózva (AUDIT_LOG_TAMPER_ATTEMPT).\n\n' +
     'USER EDIT események (onEditInstallable):\n' +
-    '  STATUSZ_VALTOZAS          — Q oszlop változás\n' +
-    '  PAYMENT_CONFIRMED         — Q → UTALVA (Péter zárja le)\n' +
-    '  PO_MODOSITAS              — SZÁMLA_TÉTELEK J/K oszlop\n' +
-    '  PROJEKT_MODOSITAS         — PROJEKTEK A oszlop\n' +
-    '  PARTNER_MODOSITAS         — PARTNEREK H oszlop\n' +
-    '  CELLAMODOSITAS            — egyéb figyelt mező\n' +
-    '  KOTEG_ID_OVERWRITE_ATTEMPT — tiltott felülírás (visszaállítva)\n\n' +
+    '  STATUSZ_VALTOZAS           — BEJÖVŐ_SZÁMLÁK Q oszlop (nem UTALVA)\n' +
+    '  PAYMENT_CONFIRMED          — BEJÖVŐ_SZÁMLÁK Q → UTALVA\n' +
+    '  SZAMLA_MODOSITAS           — BEJÖVŐ_SZÁMLÁK egyéb oszlop kézzel javítva\n' +
+    '  PO_MODOSITAS               — SZÁMLA_TÉTELEK J/K oszlop\n' +
+    '  TETEL_MODOSITAS            — SZÁMLA_TÉTELEK egyéb oszlop\n' +
+    '  PROJEKT_MODOSITAS          — PROJEKTEK A oszlop\n' +
+    '  PARTNER_MODOSITAS          — PARTNEREK H oszlop\n' +
+    '  KOTEG_MODOSITAS            — KÖTEGEK fül\n' +
+    '  KIMENO_MODOSITAS           — KIMENŐ_SZÁMLÁK fül\n' +
+    '  CONFIG_MODOSITAS           — CONFIG fül (⚠️ pénzügyi kockázat!)\n' +
+    '  ALLOKACIO_MODOSITAS        — ALLOKÁCIÓK fül\n' +
+    '  CELLAMODOSITAS             — egyéb üzleti fül\n' +
+    '  KOTEG_ID_OVERWRITE_ATTEMPT — KOTEG_ID tiltott felülírás (visszaállítva)\n' +
+    '  AUDIT_LOG_TAMPER_ATTEMPT   — ez a fül szerkesztési kísérlet (visszaállítva)\n\n' +
     'SCRIPT események (logAuditScript_):\n' +
     '  INVOICE_RECEIVED  — SheetWriter: számla beírva\n' +
     '  INVOICE_ERROR     — SheetWriter: AI_HIBA/LOCK_TIMEOUT sor\n' +
@@ -606,7 +614,28 @@ function _setupAuditLog_(sheet) {
     '  BATCH_ASSIGNED    — BatchGenerator: KOTEG_ID beírva'
   );
 
-  console.log('  → AUDIT_LOG kész (7 oszlop, datetime formátum)');
+  // AUDIT_LOG fül védelme: csak a script tulajdonos szerkesztheti
+  // (első védelmi réteg — a kód alapú revert a backup, ha ez megkerülhető lenne)
+  try {
+    // Meglévő védelmi szabályok törlése (idempotens setup)
+    const existingProtections = sheet.getProtections(SpreadsheetApp.ProtectionType.SHEET);
+    existingProtections.forEach(function(p) { p.remove(); });
+
+    const protection = sheet.protect();
+    protection.setDescription('AUDIT_LOG — csak script owner szerkesztheti');
+    // Minden szerkesztő eltávolítása (a script tulajdonos marad mint egyedüli editor)
+    protection.removeEditors(protection.getEditors());
+    // Ha a táblázat "anyone with link can edit" jellegű, ezt is zárjuk
+    if (protection.canDomainEdit()) {
+      protection.setDomainEdit(false);
+    }
+    console.log('  → AUDIT_LOG sheet protection beállítva (script owner only)');
+  } catch (protErr) {
+    // Jogosultság hiány esetén warning — a kód alapú revert mindenképp aktív
+    console.warn('  ⚠️  AUDIT_LOG sheet protection sikertelen: ' + protErr.message);
+  }
+
+  console.log('  → AUDIT_LOG kész (7 oszlop, datetime formátum, írásvédett)');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

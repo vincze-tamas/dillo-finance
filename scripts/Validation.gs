@@ -1,15 +1,30 @@
 /**
  * Validation.gs
- * Armadillo Pénzügyi Automatizáció — Szerkesztési validáció
+ * Armadillo Pénzügyi Automatizáció — Szerkesztési validáció + univerzális audit
  *
  * TRIGGER TÍPUSA: onEditInstallable (NEM simple onEdit!)
- * Azért kell installable: a validateRow() SpreadsheetApp.openById()-t hív,
- * ami simple onEdit-ből nem érhető el megbízhatóan másik sheeten.
+ * Azért kell installable: SpreadsheetApp.openById() és Session.getActiveUser()
+ * csak installable triggerből működik megbízhatóan.
  *
  * TRIGGER BEÁLLÍTÁSA: Triggers.gs → setupOnEditTrigger() → ▶ Run
  * (autobot@armadillo.hu fiókból!)
  *
- * Mit figyel:
+ * Architektúra (végrehajtási sorrend):
+ *   1. AUDIT_LOG védelem  — user szerkesztés → revert + alert + AUDIT_LOG_TAMPER_ATTEMPT log
+ *   2. Early exit 1       — tömeges szerkesztés (copy-paste, oszloprendezés)
+ *   3. Early exit 2       — no-op (e.oldValue === e.value, pl. Enter változtatás nélkül)
+ *   4. Early exit 3       — nem üzleti fül (pl. saját fül, diagram)
+ *   5. Early exit 4       — fejléc sor (row === 1)
+ *   6. KOTEG_ID guard     — BEJÖVŐ_SZÁMLÁK V oszlop → revert + alert + notifyAdmin
+ *   7. UNIVERZÁLIS AUDIT  — minden üzleti fül, minden oszlop (AuditLog.gs)
+ *   8. VALIDÁCIÓ          — csak releváns oszlopokon (FK, regex, range, státuszgép)
+ *
+ * Figyelt üzleti fülek (audit):
+ *   BEJÖVŐ_SZÁMLÁK, SZÁMLA_TÉTELEK, PROJEKTEK, PARTNEREK,
+ *   KÖTEGEK, KIMENŐ_SZÁMLÁK, CONFIG, ALLOKÁCIÓK
+ *
+ * Validáció (csak ezeken az oszlopokon):
+ *   BEJÖVŐ_SZÁMLÁK Q  (Státusz)         → státuszgép + Chat értesítő + Jóváhagyó auto-fill
  *   SZÁMLA_TÉTELEK J  (PO/Projektszám)  → FK ellenőrzés PROJEKTEK.A-ban + M rekalkuláció
  *   SZÁMLA_TÉTELEK K  (PO_CONFIDENCE)   → 0–100 range ellenőrzés + M rekalkuláció
  *   PROJEKTEK A       (Projektszám)     → regex ^[A-Z]{3,4}[0-9]{4}$
@@ -29,6 +44,28 @@
  * @param {GoogleAppsScript.Events.SheetsOnEdit} e
  */
 function onEditInstallable(e) {
+  // ── AUDIT_LOG VÉDELEM — user SOHA nem szerkesztheti
+  // onEditInstallable csak user editeknél sül el (GAS garancia),
+  // script appendRow() nem triggereli → nincs végtelen loop kockázat.
+  const editedSheet = e.range.getSheet();
+  if (editedSheet.getName() === CONFIG.TABS.AUDIT_LOG) {
+    // Cella visszaállítása az eredeti értékre
+    if (e.oldValue !== undefined) {
+      e.range.setValue(e.oldValue);
+    } else {
+      e.range.clearContent();
+    }
+    // Kísérlet naplózása (logAudit_ → getActiveUser, e event objektum)
+    logAudit_(e, 'AUDIT_LOG_TAMPER_ATTEMPT');
+    SpreadsheetApp.getUi().alert(
+      '⛔ AUDIT_LOG nem szerkeszthető!\n\n' +
+      'Az auditnapló kizárólag automatikusan kerül kitöltésre.\n' +
+      'A módosítási kísérlet naplózva.\n\n' +
+      'Cella visszaállítva.'
+    );
+    return;
+  }
+
   // ── Early exit 1: tömeges szerkesztés (pl. copy-paste, oszloprendezés)
   if (e.range.getNumRows() > 1 || e.range.getNumColumns() > 1) return;
 
@@ -41,101 +78,119 @@ function onEditInstallable(e) {
     if (oldStr === newStr) return;
   }
 
-  const sheet   = e.range.getSheet();
+  const sheet   = editedSheet;
   const tabName = sheet.getName();
   const row     = e.range.getRow();
   const col     = e.range.getColumn();
   const value   = e.range.getValue();
 
-  // ── Early exit 3: nem figyelt fül
-  const watchedTabs = [
+  // ── Early exit 3: nem üzleti fül (pl. saját segédfül, diagram lap)
+  const businessTabs = [
     CONFIG.TABS.BEJOVO_SZAMLAK,
     CONFIG.TABS.SZAMLA_TETELEK,
     CONFIG.TABS.PROJEKTEK,
     CONFIG.TABS.PARTNEREK,
+    CONFIG.TABS.KOTEGEK,
+    CONFIG.TABS.KIMENO_SZAMLAK,
+    CONFIG.TABS.CONFIG,
+    CONFIG.TABS.ALLOKACIOK_TAB,
   ];
-  if (watchedTabs.indexOf(tabName) === -1) return;
+  if (businessTabs.indexOf(tabName) === -1) return;
 
   // ── Early exit 4: fejléc sor
   if (row === 1) return;
 
-  // ── Early exit 5: nem releváns oszlop az adott fülön
-  if (tabName === CONFIG.TABS.BEJOVO_SZAMLAK) {
-    // KOTEG_ID (V) readonly védelem — ha valaki felülírná, visszaállítjuk
-    if (col === CONFIG.COLS.BEJOVO.KOTEG_ID) {
-      const oldVal = String(e.oldValue || '').trim();
-      const newVal = String(value       || '').trim();
-      if (oldVal !== '' && oldVal !== newVal) {
-        // Audit log ELŐBB — hogy a próbált értéket rögzítsük, nem a visszaállítottat
-        logAudit_(e, 'KOTEG_ID_OVERWRITE_ATTEMPT');
-
-        e.range.setValue(oldVal); // visszaállítás
-
-        // Ki próbálta meg?
-        const who   = Session.getActiveUser().getEmail() || 'ismeretlen';
-        const when  = new Date().toISOString();
-        const cell  = e.range.getA1Notation();
-        const logMsg = 'KOTEG_ID felülírási kísérlet | ' + who +
-                       ' | cella: ' + cell +
-                       ' | próbált érték: "' + newVal + '"' +
-                       ' | eredeti: "' + oldVal + '"' +
-                       ' | ' + when;
-
-        // Admin Chat + email értesítő
-        notifyAdmin('⛔ KOTEG_ID felülírási kísérlet', logMsg);
-
-        // 3. Alert a felhasználónak
-        SpreadsheetApp.getUi().alert(
-          '⛔ KOTEG_ID nem módosítható!\n\n' +
-          'Ez a mező automatikusan kerül kitöltésre a batch generáláskor.\n' +
-          'Eredeti érték visszaállítva: ' + oldVal + '\n\n' +
-          'A kísérlet naplózva és az IT értesítve.'
-        );
-      }
-      return;
+  // ── KOTEG_ID guard (BEJÖVŐ_SZÁMLÁK V oszlop)
+  // Külön blokk: visszaállít + alert + notifyAdmin — a normál audit flow előtt fut.
+  if (tabName === CONFIG.TABS.BEJOVO_SZAMLAK && col === CONFIG.COLS.BEJOVO.KOTEG_ID) {
+    const oldVal = String(e.oldValue || '').trim();
+    const newVal = String(value       || '').trim();
+    if (oldVal !== '' && oldVal !== newVal) {
+      // Audit ELŐBB — a próbált értéket rögzítjük, nem a visszaállítottat
+      logAudit_(e, 'KOTEG_ID_OVERWRITE_ATTEMPT');
+      e.range.setValue(oldVal); // visszaállítás
+      const who    = Session.getActiveUser().getEmail() || 'ismeretlen';
+      const logMsg = 'KOTEG_ID felülírási kísérlet | ' + who +
+                     ' | cella: ' + e.range.getA1Notation() +
+                     ' | próbált érték: "' + newVal + '"' +
+                     ' | eredeti: "' + oldVal + '"' +
+                     ' | ' + new Date().toISOString();
+      notifyAdmin('⛔ KOTEG_ID felülírási kísérlet', logMsg);
+      SpreadsheetApp.getUi().alert(
+        '⛔ KOTEG_ID nem módosítható!\n\n' +
+        'Ez a mező automatikusan kerül kitöltésre a batch generáláskor.\n' +
+        'Eredeti érték visszaállítva: ' + oldVal + '\n\n' +
+        'A kísérlet naplózva és az IT értesítve.'
+      );
     }
-    if (col !== CONFIG.COLS.BEJOVO.STATUSZ) return; // Q oszlop
-  } else if (tabName === CONFIG.TABS.SZAMLA_TETELEK) {
-    if (col !== CONFIG.COLS.TETEL.PO && col !== CONFIG.COLS.TETEL.PO_CONFIDENCE) return;
-  } else if (tabName === CONFIG.TABS.PROJEKTEK) {
-    if (col !== 1) return; // A oszlop
-  } else if (tabName === CONFIG.TABS.PARTNEREK) {
-    if (col !== CONFIG.COLS.PARTNER.ALLOKACIOASSABLON) return; // H oszlop
+    return;
   }
 
-  // ── Audit log — minden figyelt szerkesztés rögzítve (AuditLog.gs)
-  // A KOTEG_ID eset külön loggolódik fentebb (KOTEG_ID_OVERWRITE_ATTEMPT),
-  // ide már nem jut el (return után). Minden más eset itt naplózódik.
-  const auditAction = (function() {
-    if (tabName === CONFIG.TABS.BEJOVO_SZAMLAK) {
-      // UTALVA → PAYMENT_CONFIRMED (Péter manuálisan zárja le a köteg utalást)
-      return String(e.value || '').trim().toUpperCase() === 'UTALVA' ? 'PAYMENT_CONFIRMED' : 'STATUSZ_VALTOZAS';
-    }
-    if (tabName === CONFIG.TABS.SZAMLA_TETELEK)  return 'PO_MODOSITAS';
-    if (tabName === CONFIG.TABS.PROJEKTEK)        return 'PROJEKT_MODOSITAS';
-    if (tabName === CONFIG.TABS.PARTNEREK)        return 'PARTNER_MODOSITAS';
-    return 'CELLAMODOSITAS';
-  })();
-  logAudit_(e, auditAction);
+  // ── UNIVERZÁLIS AUDIT LOG — minden üzleti fül, minden oszlop
+  // A validáció ELŐTT fut, hogy a próbált értéket rögzítsük.
+  logAudit_(e, _getAuditAction_(tabName, col, e));
 
-  // ── Routing fülönként
+  // ── Validáció + routing — csak a releváns oszlopokra
+  // Többi fül (KÖTEGEK, KIMENŐ_SZÁMLÁK, CONFIG, ALLOKÁCIÓK): csak audit, validáció nem kell.
   try {
     if (tabName === CONFIG.TABS.BEJOVO_SZAMLAK) {
-      // Státusz változás → Chat értesítő + jóváhagyás dátum
-      _onBejovoszamlaStatuszChange_(sheet, row, String(value || ''), String(e.oldValue || ''));
+      if (col === CONFIG.COLS.BEJOVO.STATUSZ) {
+        _onBejovoszamlaStatuszChange_(sheet, row, String(value || ''), String(e.oldValue || ''));
+      }
     } else if (tabName === CONFIG.TABS.SZAMLA_TETELEK) {
-      _validateTetelRow_(sheet, row, col, value);
+      if (col === CONFIG.COLS.TETEL.PO || col === CONFIG.COLS.TETEL.PO_CONFIDENCE) {
+        _validateTetelRow_(sheet, row, col, value);
+      }
     } else if (tabName === CONFIG.TABS.PROJEKTEK) {
-      _validateProjektszam_(sheet, row, value);
-      // Projekt hozzáadva / módosítva / törölve → J dropdown szinkronban marad
-      refreshPODropdown_();  // Setup.gs
+      if (col === 1) {
+        _validateProjektszam_(sheet, row, value);
+        refreshPODropdown_(); // Setup.gs — J dropdown szinkronban marad
+      }
     } else if (tabName === CONFIG.TABS.PARTNEREK) {
-      _validateAllokaciosSablon_(sheet, row, value);
+      if (col === CONFIG.COLS.PARTNER.ALLOKACIOASSABLON) {
+        _validateAllokaciosSablon_(sheet, row, value);
+      }
     }
   } catch (err) {
     // Validáció belső hiba → ne törjük el a felhasználó munkáját, csak naplózzuk
     console.error('onEditInstallable validáció hiba: ' + err.message);
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIT ACTION MEGHATÁROZÁS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Meghatározza az audit action típust a szerkesztett fül és oszlop alapján.
+ * Minden üzleti fülre egyedi típus — az AUDIT_LOG-ban szűrhető.
+ *
+ * @param {string} tabName
+ * @param {number} col
+ * @param {GoogleAppsScript.Events.SheetsOnEdit} e
+ * @returns {string}
+ */
+function _getAuditAction_(tabName, col, e) {
+  if (tabName === CONFIG.TABS.BEJOVO_SZAMLAK) {
+    if (col === CONFIG.COLS.BEJOVO.STATUSZ) {
+      // UTALVA → PAYMENT_CONFIRMED (Péter zárja le a köteg utalást)
+      return String(e.value || '').trim().toUpperCase() === 'UTALVA'
+        ? 'PAYMENT_CONFIRMED' : 'STATUSZ_VALTOZAS';
+    }
+    return 'SZAMLA_MODOSITAS'; // egyéb oszlop (pl. kézzel javított összeg, PO_REASONING)
+  }
+  if (tabName === CONFIG.TABS.SZAMLA_TETELEK) {
+    // PO-specifikus oszlopok: saját típus a szűrhetőség miatt
+    return (col === CONFIG.COLS.TETEL.PO || col === CONFIG.COLS.TETEL.PO_CONFIDENCE)
+      ? 'PO_MODOSITAS' : 'TETEL_MODOSITAS';
+  }
+  if (tabName === CONFIG.TABS.PROJEKTEK)      return 'PROJEKT_MODOSITAS';
+  if (tabName === CONFIG.TABS.PARTNEREK)      return 'PARTNER_MODOSITAS';
+  if (tabName === CONFIG.TABS.KOTEGEK)        return 'KOTEG_MODOSITAS';
+  if (tabName === CONFIG.TABS.KIMENO_SZAMLAK) return 'KIMENO_MODOSITAS';
+  if (tabName === CONFIG.TABS.CONFIG)         return 'CONFIG_MODOSITAS';  // ⚠️ PÉNZÜGYI KOCKÁZAT
+  if (tabName === CONFIG.TABS.ALLOKACIOK_TAB) return 'ALLOKACIO_MODOSITAS';
+  return 'CELLAMODOSITAS';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
