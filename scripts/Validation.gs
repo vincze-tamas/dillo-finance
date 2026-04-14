@@ -32,13 +32,17 @@ function onEditInstallable(e) {
   // ── Early exit 1: tömeges szerkesztés (pl. copy-paste, oszloprendezés)
   if (e.range.getNumRows() > 1 || e.range.getNumColumns() > 1) return;
 
+  // ── Early exit 2: érték nem változott (pl. Enter gomb változtatás nélkül)
+  // e.oldValue undefined ha a cella előzőleg üres volt — azt nem szűrjük ki
+  if (e.oldValue !== undefined && String(e.oldValue) === String(e.value)) return;
+
   const sheet   = e.range.getSheet();
   const tabName = sheet.getName();
   const row     = e.range.getRow();
   const col     = e.range.getColumn();
   const value   = e.range.getValue();
 
-  // ── Early exit 2: nem figyelt fül
+  // ── Early exit 3: nem figyelt fül
   const watchedTabs = [
     CONFIG.TABS.BEJOVO_SZAMLAK,
     CONFIG.TABS.SZAMLA_TETELEK,
@@ -47,10 +51,10 @@ function onEditInstallable(e) {
   ];
   if (watchedTabs.indexOf(tabName) === -1) return;
 
-  // ── Early exit 3: fejléc sor
+  // ── Early exit 4: fejléc sor
   if (row === 1) return;
 
-  // ── Early exit 4: nem releváns oszlop az adott fülön
+  // ── Early exit 5: nem releváns oszlop az adott fülön
   if (tabName === CONFIG.TABS.BEJOVO_SZAMLAK) {
     // KOTEG_ID (V) readonly védelem — ha valaki felülírná, visszaállítjuk
     if (col === CONFIG.COLS.BEJOVO.KOTEG_ID) {
