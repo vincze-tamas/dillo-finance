@@ -327,7 +327,14 @@ function _onBejovoszamlaStatuszChange_(sheet, row, ujStatusz, regiStatusz) {
   console.log('Státusz változás: ' + szamlaId + ' | ' +
     regiStatuszDisplay + ' → ' + ujStatusz);
 
-  // JÓVÁHAGYÁS dátuma automatikus beírása
+  // JÓVÁHAGYÓ emailje automatikus beírása minden státuszváltásnál
+  // (aki változtatta a státuszt, annak emailje kerül R oszlopba)
+  const userEmail = Session.getActiveUser().getEmail();
+  if (userEmail) {
+    sheet.getRange(row, c.JOVAHAGYO).setValue(userEmail);
+  }
+
+  // JÓVÁHAGYÁS dátuma automatikus beírása (csak JÓVÁHAGYVA esetén)
   if (ujStatusz === 'JÓVÁHAGYVA') {
     sheet.getRange(row, c.JOVAHAGYAS_DATUM).setValue(formatDate(new Date()));
   }
