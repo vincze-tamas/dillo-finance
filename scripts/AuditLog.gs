@@ -104,6 +104,20 @@ function logAudit_(e, actionType) {
  * Script által indított esemény naplózása. Nincs `e` event objektum.
  * A "user" mező az effektív script tulajdonos emailje (autobot@armadillo.hu).
  *
+ * ── Miért getEffectiveUser() és NEM getActiveUser()? ──────────────────────
+ * Ez a wrapper kizárólag script kontextusból hívódik (time-based triggerek,
+ * pl. 15 perces Gmail figyelő, szerda 9:00 digest, szerda 14:00 batch).
+ * Ezekben a kontextusokban NINCS aktív felhasználói munkamenet, ezért:
+ *
+ *   Session.getActiveUser().getEmail()    → ''  (üres string — nincs session)
+ *   Session.getEffectiveUser().getEmail() → 'autobot@armadillo.hu'  (script tulajdonos)
+ *
+ * A getActiveUser() csak interaktív (felhasználó által kiváltott) trigger
+ * futtatásokban ad vissza emailt — pl. onEditInstallable. Ezért a logAudit_()
+ * wrapper (user edit) getActiveUser()-t, ez a wrapper getEffectiveUser()-t
+ * használ. Ne cseréld fel a kettőt.
+ * ──────────────────────────────────────────────────────────────────────────
+ *
  * @param {string} actionType - esemény típus konstans
  * @param {string} rowId      - pl. szamlaId, kotegId, fájlnév
  * @param {string} fieldName  - pl. 'KOTEG_ID', 'Gemini OCR', 'BEJÖVŐ_SZÁMLÁK'
