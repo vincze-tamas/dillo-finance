@@ -459,24 +459,64 @@ function runUtilsTests() {
  */
 function testGetNextWorkday() {
   console.log('getNextWorkday teszt...');
+  getNextWorkday._configCache = null; // fresh olvasás
 
   // ── 1. Alap: péntek + 1 munkanap = hétfő
   // 2026-04-10 (péntek) → kihagyja szombat+vasárnapot → 2026-04-13 (hétfő)
   const friday = new Date(2026, 3, 10);
-  const next   = getNextWorkday(friday, 1);
-  const nextOk = formatDate(next) === '2026-04-13';
-  console.log('Péntek + 1 munkanap: ' + formatDate(next) + (nextOk ? ' ✓' : ' ✗ HIBA (várt: 2026-04-13)'));
+  const r1 = formatDate(getNextWorkday(friday, 1));
+  console.log('Péntek + 1 munkanap: ' + r1 + (r1 === '2026-04-13' ? ' ✓' : ' ✗ HIBA (várt: 2026-04-13)'));
 
-  // ── 2. Szombatról addDays=0: ha nem áthelyezett munkanap → hétfő
-  // 2026-04-11 (szombat, nincs WORKING_SATURDAYS-ban) → 2026-04-13 (hétfő)
+  // ── 2. Szombat (nem áthelyezett) → hétfő
   const saturday = new Date(2026, 3, 11);
-  const fromSat  = getNextWorkday(saturday, 0);
-  const satOk = formatDate(fromSat) === '2026-04-13';
-  console.log('Szombatról következő munkanap: ' + formatDate(fromSat) + (satOk ? ' ✓' : ' ✗ HIBA (várt: 2026-04-13)'));
+  getNextWorkday._configCache = null;
+  const r2 = formatDate(getNextWorkday(saturday, 0));
+  console.log('Szombat (nem áthelyezett) → ' + r2 + (r2 === '2026-04-13' ? ' ✓' : ' ✗ HIBA (várt: 2026-04-13)'));
 
-  // ── 3. Ünnepnap átugrás + WORKING_SATURDAYS — CONFIG adatfüggő tesztek
-  // ⚠️  Ezek csak a Task 03 elvégzése után tesztelhetők (CONFIG fül kitöltve):
-  //     - getNextWorkday(húsvéthétfő 2026-04-06, 1) → 2026-04-07 (kedd, hétfő ünnepnap)
-  //     - getNextWorkday(áthelyezett munkanap szombat, 0) → maga a szombat (munkanapként kezeli)
-  console.log('⚠️  Ünnepnap + WORKING_SATURDAYS teszt: Task 03 elvégzése után futtatandó (CONFIG adat kell)');
+  // ── 3. WORKING_SATURDAYS ág — CONFIG-ból olvassa, ha nincs adat: figyelmeztet
+  getNextWorkday._configCache = null;
+  const ss         = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  const cfgSheet   = ss.getSheetByName(CONFIG.TABS.CONFIG);
+  const cfgData    = cfgSheet.getDataRange().getValues();
+  const workingSats = _getConfigSetFromData_(cfgData, 'WORKING_SATURDAYS_2026');
+
+  if (workingSats.size === 0) {
+    console.warn('⚠️  WORKING_SATURDAYS_2026 üres a CONFIG-ban — teszt kihagyva. Task 03 után futtasd újra.');
+  } else {
+    const firstSat  = Array.from(workingSats).sort()[0];
+    const satDate   = new Date(firstSat + 'T00:00:00');
+    getNextWorkday._configCache = null;
+    const r3 = formatDate(getNextWorkday(satDate, 0));
+    const ok3 = r3 === firstSat;
+    console.log('Áthelyezett munkanap (' + firstSat + ') addDays=0 → ' + r3 +
+      (ok3 ? ' ✓ (saját napját adja vissza)' : ' ✗ HIBA (várt: ' + firstSat + ')'));
+  }
+
+  // ── 4. Ünnepnap átugrás — CONFIG-ból olvassa, ha nincs adat: figyelmeztet
+  const holidays = _getConfigSetFromData_(cfgData, 'HOLIDAYS_2026');
+
+  if (holidays.size === 0) {
+    console.warn('⚠️  HOLIDAYS_2026 üres a CONFIG-ban — teszt kihagyva. Task 03 után futtasd újra.');
+  } else {
+    // Keresünk egy hétköznapi ünnepnapot (H–P)
+    const weekdayHol = Array.from(holidays).sort().find(function(d) {
+      const dow = new Date(d + 'T00:00:00').getDay();
+      return dow >= 1 && dow <= 5;
+    });
+    if (!weekdayHol) {
+      console.warn('⚠️  HOLIDAYS_2026-ban nincs hétköznapi ünnepnap — ünnepnap-teszt kihagyva.');
+    } else {
+      const holDate  = new Date(weekdayHol + 'T00:00:00');
+      const dayBefore = new Date(holDate);
+      dayBefore.setDate(dayBefore.getDate() - 1);
+      getNextWorkday._configCache = null;
+      const r4  = formatDate(getNextWorkday(dayBefore, 1));
+      const ok4 = r4 !== weekdayHol;
+      console.log('Ünnepnap (' + weekdayHol + ') átugrás → ' + r4 +
+        (ok4 ? ' ✓ (nem az ünnepnap)' : ' ✗ HIBA (ünnepnapot adott vissza!)'));
+    }
+  }
+
+  getNextWorkday._configCache = null; // teszt után cleanup
+  console.log('getNextWorkday teszt kész.');
 }
