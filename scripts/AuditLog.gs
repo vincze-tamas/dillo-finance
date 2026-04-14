@@ -124,8 +124,11 @@ function _writeAuditRow_(user, forras, entitas, muvelet, sorAzonId, mezoNev, reg
     const logSheet = ss.getSheetByName(CONFIG.TABS.AUDIT_LOG);
     if (!logSheet) return; // setupSSOT előtt — csendesen kihagyja
 
+    // Timestamp stringként — appendRow() nem örökli a cellaszám-formátumot,
+    // ezért ISO string garantálja a helyes megjelenítést és a rendezhetőséget.
+    const ts = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
     logSheet.appendRow([
-      new Date(),  // A: Időbélyeg
+      ts,          // A: Időbélyeg (string, ISO formátum — sortable)
       user,        // B: Felhasználó
       forras,      // C: Forrás      (FELHASZNALO / RENDSZER)
       entitas,     // D: Entitás     (SZAMLA / PROJEKT / stb.)

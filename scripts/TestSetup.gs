@@ -216,11 +216,9 @@ function repairAuditLogHeaders() {
   const headerRange = sheet.getRange(1, 1, 1, headers.length);
   headerRange.setValues([headers]);
 
-  // Formázás (matching Setup.gs _setupAuditLog_)
+  // Formázás — megegyezik a Setup.gs _setHeaders_() stílusával (#4a86e8 kék, félkövér)
   headerRange.setFontWeight('bold');
-  headerRange.setBackground('#37474F');
-  headerRange.setFontColor('#FFFFFF');
-  headerRange.setFontSize(11);
+  headerRange.setBackground('#4a86e8');
 
   // A oszlop datetime formátum az adatsorokra
   sheet.getRange(2, 1, Math.max(sheet.getMaxRows() - 1, 999), 1)
