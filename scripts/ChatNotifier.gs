@@ -114,9 +114,12 @@ function notifyStatusChange(szamlaId, szallitoNev, osszeg, deviza,
            '• Azonosító: `' + szamlaId + '`\n' +
            '• Visszautasította: ' + (jovahagyoNev || '–') + '\n' +
            '• Ok: ' + (visszautasitasOka || '–');
-    // OPS-re és Finance-re is megy
+    // OPS-re és Finance-re is megy — TEST_MODE-ban mindkettő Admin-ra mutat,
+    // de csak egyszer küldjük ki (dedup), hogy ne jöjjön dupla üzenet
     _sendToWebhook_(CONFIG.CHAT_WEBHOOK_OPS, text);
-    _sendToWebhook_(CONFIG.CHAT_WEBHOOK_FINANCE, text);
+    if (CONFIG.CHAT_WEBHOOK_FINANCE !== CONFIG.CHAT_WEBHOOK_OPS) {
+      _sendToWebhook_(CONFIG.CHAT_WEBHOOK_FINANCE, text);
+    }
 
   } else if (ujStatusz === 'UTALVA') {
     text = icon + ' *' + prefix + 'Számla utalva*\n' +
