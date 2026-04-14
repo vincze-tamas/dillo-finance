@@ -459,13 +459,24 @@ function runUtilsTests() {
  */
 function testGetNextWorkday() {
   console.log('getNextWorkday teszt...');
-  // 2026-04-10 péntek → következő munkanap 2026-04-14 hétfő (ha nincs ünnep)
+
+  // ── 1. Alap: péntek + 1 munkanap = hétfő
+  // 2026-04-10 (péntek) → kihagyja szombat+vasárnapot → 2026-04-13 (hétfő)
   const friday = new Date(2026, 3, 10);
   const next   = getNextWorkday(friday, 1);
-  console.log('Péntek + 1 munkanap: ' + formatDate(next));
+  const nextOk = formatDate(next) === '2026-04-13';
+  console.log('Péntek + 1 munkanap: ' + formatDate(next) + (nextOk ? ' ✓' : ' ✗ HIBA (várt: 2026-04-13)'));
 
-  // Szombat → következő munkanap hétfő
+  // ── 2. Szombatról addDays=0: ha nem áthelyezett munkanap → hétfő
+  // 2026-04-11 (szombat, nincs WORKING_SATURDAYS-ban) → 2026-04-13 (hétfő)
   const saturday = new Date(2026, 3, 11);
   const fromSat  = getNextWorkday(saturday, 0);
-  console.log('Szombatról következő munkanap: ' + formatDate(fromSat));
+  const satOk = formatDate(fromSat) === '2026-04-13';
+  console.log('Szombatról következő munkanap: ' + formatDate(fromSat) + (satOk ? ' ✓' : ' ✗ HIBA (várt: 2026-04-13)'));
+
+  // ── 3. Ünnepnap átugrás + WORKING_SATURDAYS — CONFIG adatfüggő tesztek
+  // ⚠️  Ezek csak a Task 03 elvégzése után tesztelhetők (CONFIG fül kitöltve):
+  //     - getNextWorkday(húsvéthétfő 2026-04-06, 1) → 2026-04-07 (kedd, hétfő ünnepnap)
+  //     - getNextWorkday(áthelyezett munkanap szombat, 0) → maga a szombat (munkanapként kezeli)
+  console.log('⚠️  Ünnepnap + WORKING_SATURDAYS teszt: Task 03 elvégzése után futtatandó (CONFIG adat kell)');
 }
