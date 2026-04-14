@@ -13,6 +13,7 @@
  * Felhasználói szerkesztés (logAudit_):
  *   STATUSZ_VALTOZAS                 — BEJÖVŐ_SZÁMLÁK Q oszlop (nem fizetés megerősítés)
  *   FIZETES_MEGEROSITVE              — BEJÖVŐ_SZÁMLÁK Q → UTALVA (Péter zárja le)
+ *   STATUSZ_TILTOTT_ATMENET          — tiltott státuszátmenet kísérlet (visszaállítva)
  *   SZAMLA_MODOSITAS                 — BEJÖVŐ_SZÁMLÁK egyéb oszlop kézzel javítva
  *   PO_MODOSITAS                     — SZÁMLA_TÉTELEK J/K oszlop
  *   TETEL_MODOSITAS                  — SZÁMLA_TÉTELEK egyéb oszlop
@@ -48,6 +49,7 @@ const AUDIT_MUVELET = Object.freeze({
   // ── Felhasználói szerkesztések ─────────────────────────────────────────
   STATUSZ_VALTOZAS:                 'STATUSZ_VALTOZAS',
   FIZETES_MEGEROSITVE:              'FIZETES_MEGEROSITVE',
+  STATUSZ_TILTOTT_ATMENET:          'STATUSZ_TILTOTT_ATMENET',
   SZAMLA_MODOSITAS:                 'SZAMLA_MODOSITAS',
   PO_MODOSITAS:                     'PO_MODOSITAS',
   TETEL_MODOSITAS:                  'TETEL_MODOSITAS',

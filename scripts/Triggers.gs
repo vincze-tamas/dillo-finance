@@ -298,19 +298,84 @@ function _getExistingTriggerFunctions_() {
 
 /**
  * Ezt a függvényt az onEditInstallable() hívja, ha BEJÖVŐ_SZÁMLÁK Q oszlopa változik.
- * ChatNotifier.gs-t és az SSOT-t frissíti.
+ * 1. Státuszgép guard — tiltott átmenet esetén revert + audit + alert
+ * 2. JÓVÁHAGYÓ email + dátum automatikus beírása (érvényes átmenetnél)
+ * 3. Chat értesítő küldése
  *
  * MEGJEGYZÉS: Ez a kód ide kerül azért, mert szorosan kapcsolódik a trigger
  * életciklushoz — de az onEditInstallable maga a Validation.gs-ben van.
  * Lásd: Validation.gs → onEditInstallable() → _onBejovoszamlaStatuszChange_() hívás.
  *
+ * Érvényes átmenetek:
+ *   BEÉRKEZETT    → JÓVÁHAGYVA, VISSZAUTASÍTVA
+ *   HIÁNYOS_PO    → JÓVÁHAGYVA, VISSZAUTASÍTVA, BEÉRKEZETT
+ *   AI_HIBA       → BEÉRKEZETT
+ *   LOCK_TIMEOUT  → BEÉRKEZETT
+ *   JÓVÁHAGYVA    → UTALVA, VISSZAUTASÍTVA
+ *   VISSZAUTASÍTVA → (terminális — semmi)
+ *   UTALVA         → (terminális — semmi)
+ *
  * @param {Sheet}  sheet
  * @param {number} row
- * @param {string} ujStatusz   - Az új státusz érték
- * @param {string} regiStatusz - Az előző érték (e.oldValue)
+ * @param {string} ujStatusz   - Az új státusz érték (e.value)
+ * @param {string} regiStatusz - Az előző érték (e.oldValue, '' ha cella üres volt)
  */
 function _onBejovoszamlaStatuszChange_(sheet, row, ujStatusz, regiStatusz) {
   const c = CONFIG.COLS.BEJOVO;
+
+  // ── STÁTUSZGÉP GUARD ──────────────────────────────────────────────────────
+  // Érvényes átmenetek: kulcs = régi státusz, érték = megengedett új státuszok tömbje.
+  // Terminális státusznál üres tömb → semmilyen átmenet nem megengedett.
+  // Ismeretlen régi státusz (pl. jövőbeni értékek) → engedjük át (null = nincs korlát).
+  const ATMENETEK = {
+    'BEÉRKEZETT':    ['JÓVÁHAGYVA', 'VISSZAUTASÍTVA'],
+    'HIÁNYOS_PO':    ['JÓVÁHAGYVA', 'VISSZAUTASÍTVA', 'BEÉRKEZETT'],
+    'AI_HIBA':       ['BEÉRKEZETT'],
+    'LOCK_TIMEOUT':  ['BEÉRKEZETT'],
+    'JÓVÁHAGYVA':    ['UTALVA', 'VISSZAUTASÍTVA'],
+    'VISSZAUTASÍTVA': [],  // terminális
+    'UTALVA':         [],  // terminális
+  };
+
+  const regiTrimmed = regiStatusz.trim();
+  const ujTrimmed   = ujStatusz.trim();
+
+  // Üres régi érték → script/setup első beírása → engedjük át
+  if (regiTrimmed !== '') {
+    const megengedett = ATMENETEK.hasOwnProperty(regiTrimmed)
+      ? ATMENETEK[regiTrimmed]
+      : null; // ismeretlen régi érték → nem blokkoljuk (forward compat)
+
+    if (megengedett !== null && megengedett.indexOf(ujTrimmed) === -1) {
+      // ── TILTOTT ÁTMENET ───────────────────────────────────────────────────
+      // 1. Visszaállítás az eredeti értékre
+      sheet.getRange(row, c.STATUSZ).setValue(regiTrimmed);
+
+      // 2. Audit: közvetlen _writeAuditRow_ hívás — logAudit_() nem érhető el itt
+      //    (nincs `e` event objektum), de a forrás FELHASZNALO és az entitás SZAMLA
+      const szamlaIdAudit = String(
+        sheet.getRange(row, c.SZAMLA_ID).getValue() || ('sor ' + row));
+      const userAudit = Session.getActiveUser().getEmail() || 'ismeretlen';
+      _writeAuditRow_(userAudit, AUDIT_FORRAS.FELHASZNALO, AUDIT_ENTITAS.SZAMLA,
+        AUDIT_MUVELET.STATUSZ_TILTOTT_ATMENET,
+        szamlaIdAudit, 'Státusz', regiTrimmed, ujTrimmed);
+
+      // 3. Felhasználói értesítő — terminális vs. nem engedélyezett eset eltér
+      const reszletek = (megengedett.length === 0)
+        ? '"' + regiTrimmed + '" végleges státusz — nem módosítható.'
+        : '"' + regiTrimmed + '" → "' + ujTrimmed + '" nem engedélyezett.\n' +
+          'Megengedett átmenet(ek): ' + megengedett.join(' / ');
+
+      SpreadsheetApp.getUi().alert(
+        '⛔ Érvénytelen státusz változtatás!\n\n' +
+        reszletek + '\n\n' +
+        'Eredeti érték visszaállítva. A kísérlet naplózva.'
+      );
+      return; // Korai kilépés — chat értesítő és auto-fill NEM fut le
+    }
+  }
+
+  // ── ÉRVÉNYES ÁTMENET — sordata olvasás, auto-fill, chat értesítő ─────────
   // KOZ-07: c.VISSZAUTASITAS_OKA (T=20) oszlopig olvassuk a sort,
   // hogy a visszautasítás oka is bekerüljön az értesítőbe.
   const rowData = sheet.getRange(row, 1, 1, c.VISSZAUTASITAS_OKA).getValues()[0];
@@ -321,10 +386,9 @@ function _onBejovoszamlaStatuszChange_(sheet, row, ujStatusz, regiStatusz) {
   const deviza            = String(rowData[c.DEVIZA             - 1] || 'HUF');
   const visszautasitasOka = String(rowData[c.VISSZAUTASITAS_OKA - 1] || '');
 
-  // Ha a cella korábban üres volt (pl. első beírás), az e.oldValue üres string lesz
-  const regiStatuszDisplay = regiStatusz && regiStatusz.trim() ? regiStatusz : '(üres)';
+  const regiStatuszDisplay = regiTrimmed || '(üres)';
   console.log('Státusz változás: ' + szamlaId + ' | ' +
-    regiStatuszDisplay + ' → ' + ujStatusz);
+    regiStatuszDisplay + ' → ' + ujTrimmed);
 
   // JÓVÁHAGYÓ emailje: az aktív felhasználó emailje kerül a sheet-be ÉS a Chat üzenetbe
   // (aki változtatta a státuszt, annak emailje — sheet-ből olvasva még üres lenne)
@@ -335,14 +399,14 @@ function _onBejovoszamlaStatuszChange_(sheet, row, ujStatusz, regiStatusz) {
   }
 
   // JÓVÁHAGYÁS dátuma automatikus beírása (csak JÓVÁHAGYVA esetén)
-  if (ujStatusz === 'JÓVÁHAGYVA') {
+  if (ujTrimmed === 'JÓVÁHAGYVA') {
     sheet.getRange(row, c.JOVAHAGYAS_DATUM).setValue(formatDate(new Date()));
   }
 
   // Chat értesítő
   try {
     notifyStatusChange(szamlaId, szallitoNev, osszeg, deviza,
-      regiStatuszDisplay, ujStatusz, jovahagyo, visszautasitasOka);
+      regiStatuszDisplay, ujTrimmed, jovahagyo, visszautasitasOka);
   } catch (e) {
     console.error('notifyStatusChange hiba: ' + e.message);
   }
