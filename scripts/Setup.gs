@@ -43,6 +43,10 @@ function setupSSOT() {
   _setupTab_(ss, CONFIG.TABS.CONFIG,           _setupConfigTab_);
   _setupTab_(ss, CONFIG.TABS.ALLOKACIOK_TAB,       _setupAllokaciok_);
 
+  // SZÁMLA_TÉTELEK J dropdown frissítése a PROJEKTEK adatai alapján.
+  // Ha PROJEKTEK még üres, a refreshPODropdown_() csendesen kihagyja.
+  refreshPODropdown_();
+
   console.log('════════════════════════════════════════');
   console.log('✅ SSOT setup kész! Következő lépés:');
   console.log('   1. Validation.gs → onEditInstallable trigger beállítása');
@@ -549,6 +553,75 @@ function _setupAllokaciok_(sheet) {
   );
 
   console.log('  → ALLOKÁCIÓK kész (8 oszlop, ALLOKÁCIÓ_TÍPUS dropdown beállítva)');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PO DROPDOWN KARBANTARTÁS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * SZÁMLA_TÉTELEK J oszlop (Projektszám/PO) dropdown frissítése.
+ *
+ * A PROJEKTEK fül A oszlopából olvassa az összes érvényes projektszámot,
+ * kiszűri az üres sorokat, ABC sorrendbe rendezi, majd DataValidation-ként
+ * alkalmazza a SZÁMLA_TÉTELEK J oszlopára (2. sortól). Így a dropdown
+ * mindig rendezett és üres sorok nélküli — függetlenül attól, hogy a
+ * PROJEKTEK fülön milyen sorrendben kerültek be az adatok.
+ *
+ * Hívódik:
+ *   1. setupSSOT() végén — teljes sheet setup után
+ *   2. onEditInstallable → PROJEKTEK A szerkesztésekor (Validation.gs)
+ *
+ * Ha PROJEKTEK üres: csendesen visszatér, nem állít be validációt.
+ * Ha PROJEKTEK feltöltve: a dropdown azonnal frissül, nincs szükség
+ *   manuális setup újrafuttatásra.
+ *
+ * Kézzel is futtatható: Script Editor → refreshPODropdown → ▶ Run
+ */
+function refreshPODropdown_() {
+  const ss        = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  const projektek = ss.getSheetByName(CONFIG.TABS.PROJEKTEK);
+  const tetelek   = ss.getSheetByName(CONFIG.TABS.SZAMLA_TETELEK);
+
+  if (!projektek || !tetelek) {
+    console.warn('refreshPODropdown_: PROJEKTEK vagy SZÁMLA_TÉTELEK fül nem található.');
+    return;
+  }
+
+  const lastRow = projektek.getLastRow();
+  if (lastRow < 2) {
+    console.log('refreshPODropdown_: PROJEKTEK fül üres — dropdown nem állítható be.');
+    return;
+  }
+
+  // Üres sorok kiszűrése + ABC rendezés
+  const values = projektek.getRange(2, 1, lastRow - 1, 1)
+    .getValues()
+    .flat()
+    .map(function(v) { return String(v || '').trim(); })
+    .filter(function(v) { return v !== ''; })
+    .sort();
+
+  if (values.length === 0) {
+    console.log('refreshPODropdown_: Nincs érvényes projektszám — dropdown nem állítható be.');
+    return;
+  }
+
+  const rule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(values, true)   // true = legördülő ikon megjelenik
+    .setAllowInvalid(false)
+    .setHelpText('Válassz a PROJEKTEK fülön regisztrált projektszámok közül.')
+    .build();
+
+  tetelek.getRange(2, CONFIG.COLS.TETEL.PO, Math.max(tetelek.getMaxRows() - 1, 999), 1)
+    .setDataValidation(rule);
+
+  console.log('refreshPODropdown_: J dropdown frissítve — ' + values.length + ' projekt, ABC sorrend.');
+}
+
+/** Nyilvános wrapper — Script Editorból kézzel futtatható. */
+function refreshPODropdown() {
+  refreshPODropdown_();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

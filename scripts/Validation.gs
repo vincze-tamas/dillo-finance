@@ -100,6 +100,8 @@ function onEditInstallable(e) {
       _validateTetelRow_(sheet, row, col, value);
     } else if (tabName === CONFIG.TABS.PROJEKTEK) {
       _validateProjektszam_(sheet, row, value);
+      // Projekt hozzáadva / módosítva / törölve → J dropdown szinkronban marad
+      refreshPODropdown_();  // Setup.gs
     } else if (tabName === CONFIG.TABS.PARTNEREK) {
       _validateAllokaciosSablon_(sheet, row, value);
     }
