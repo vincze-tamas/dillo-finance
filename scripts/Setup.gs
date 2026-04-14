@@ -627,6 +627,10 @@ function _setupAuditLog_(sheet) {
  *
  * Kézzel is futtatható: Script Editor → refreshPODropdown → ▶ Run
  */
+// PropertiesService kulcs — az utoljára alkalmazott rendezett projekt lista hash-e.
+// Ha a lista nem változott az előző trigger futás óta, kihagyjuk a validáció újraírást.
+var PO_LIST_CACHE_KEY_ = 'PO_DROPDOWN_HASH_' + (CONFIG.TEST_MODE ? 'TEST' : 'PROD');
+
 function refreshPODropdown_() {
   const ss        = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
   const projektek = ss.getSheetByName(CONFIG.TABS.PROJEKTEK);
@@ -656,6 +660,17 @@ function refreshPODropdown_() {
     return;
   }
 
+  // Hash ellenőrzés: ha a lista nem változott az előző futás óta, kihagyjuk
+  // a DataValidation újraírást (sheet API write quota + sebesség)
+  const currentHash = values.join('|');
+  const props       = PropertiesService.getScriptProperties();
+  const cachedHash  = props.getProperty(PO_LIST_CACHE_KEY_);
+
+  if (currentHash === cachedHash) {
+    console.log('refreshPODropdown_: lista nem változott — kihagyva (' + values.length + ' projekt).');
+    return;
+  }
+
   const rule = SpreadsheetApp.newDataValidation()
     .requireValueInList(values, true)   // true = legördülő ikon megjelenik
     .setAllowInvalid(false)
@@ -664,6 +679,9 @@ function refreshPODropdown_() {
 
   tetelek.getRange(2, CONFIG.COLS.TETEL.PO, Math.max(tetelek.getMaxRows() - 1, 999), 1)
     .setDataValidation(rule);
+
+  // Hash mentése — következő futáskor összehasonlítható
+  props.setProperty(PO_LIST_CACHE_KEY_, currentHash);
 
   console.log('refreshPODropdown_: J dropdown frissítve — ' + values.length + ' projekt, ABC sorrend.');
 }

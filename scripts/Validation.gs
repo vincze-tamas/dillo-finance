@@ -33,8 +33,13 @@ function onEditInstallable(e) {
   if (e.range.getNumRows() > 1 || e.range.getNumColumns() > 1) return;
 
   // ── Early exit 2: érték nem változott (pl. Enter gomb változtatás nélkül)
-  // e.oldValue undefined ha a cella előzőleg üres volt — azt nem szűrjük ki
-  if (e.oldValue !== undefined && String(e.oldValue) === String(e.value)) return;
+  // e.oldValue undefined  → cella előzőleg üres volt (új adat) → engedjük át
+  // e.value undefined/null → cella törölve → '' ként kezeljük, nem "undefined"-ként
+  if (e.oldValue !== undefined) {
+    const oldStr = String(e.oldValue);
+    const newStr = (e.value !== undefined && e.value !== null) ? String(e.value) : '';
+    if (oldStr === newStr) return;
+  }
 
   const sheet   = e.range.getSheet();
   const tabName = sheet.getName();
