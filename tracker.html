@@ -205,24 +205,32 @@ T('F0-S2c','Fázis 0','Utils.gs',
   '✓ getNextWorkday(péntek) → a következő hétfő dátumát adja<br>✓ getNextWorkday(2026-04-06, húsvéthétfő) → 2026-04-07 (kedd, mert hétfő ünnepnap)<br>✓ getNextWorkday(WORKING_SATURDAYS-ban lévő szombat) → munkanapként kezeli (nem ugrik tovább)<br>✓ ELLENŐRZENDŐ státuszú CONFIG sor esetén: logol, de fut tovább (nem áll meg)'),
 
 T('F0-S3a','Fázis 0','Setup.gs',
-  'Setup.gs megírva: setupSSOT() — 8 fül helyes nevekkel + összes fejléc + dropdown validációk + státusz szerinti conditional formatting (kék/sárga/piros/zöld/lila/szürke/sötétpiros) + guard (meglévő fület nem írja felül)',
+  'Setup.gs megírva: setupSSOT() — 9 fül helyes nevekkel (BEJÖVŐ_SZÁMLÁK, SZÁMLA_TÉTELEK, PROJEKTEK, PARTNEREK, KÖTEGEK, KIMENŐ_SZÁMLÁK, CONFIG, ALLOKÁCIÓK, AUDIT_LOG) + összes fejléc + dropdown validációk (SZÁMLA_TÉTELEK J: refreshPODropdown_() PROJEKTEK.A-ból, ABC sorrendben, üres sorok nélkül) + státusz szerinti conditional formatting + guard',
   'Fejlesztő',false,true,false,false,false,null),
 T('F0-S3b','Fázis 0','Setup.gs',
   'Setup.gs tesztelve staging sheeten: Apps Script → Run setupSSOT()',
   'Te',false,false,true,false,false,null,
-  '✓ 8 fül látható helyes nevekkel: BEJÖVŐ_SZÁMLÁK, SZÁMLA_TÉTELEK, PROJEKTEK, PARTNEREK, KÖTEGEK, KIMENŐ_SZÁMLÁK, CONFIG, ALLOKÁCIÓK<br>✓ BEJÖVŐ_SZÁMLÁK fejlécek ellenőrzése: A=Számla ID, G=Teljesítés dátuma, H=Fizetési határidő, Q=Státusz, R=Jóváhagyó neve, W=Gmail message ID<br>✓ Q oszlop (Státusz) dropdown: "BEÉRKEZETT" → elfogadja; "ROSSZ_ERTEK" → elutasítja<br>✓ J oszlop (Deviza) dropdown: csak HUF/EUR<br>✓ K oszlop (Kategória) dropdown: PROJEKT/ÁLLANDÓ/MEGOSZTOTT<br>✓ Conditional formatting: Q oszlopba "JÓVÁHAGYVA" írva → sor zöld; "HIÁNYOS_PO" → sárga; "AI_HIBA" → sötétpiros fehér betűvel<br>✓ PROJEKTEK A oszlop regex: "FCA2601" → elfogad; "fca2601" → elutasít; "IMME261" (7 char) → elutasít<br>✓ SZÁMLA_TÉTELEK K oszlop (PO_CONFIDENCE) numerikus: 50 → elfogad; 101 → elutasít; "szoveg" → elutasít<br>✓ Guard teszt: setupSSOT() újra futtatva → nem duplikálja a füleket, konzolban "Fül már létezik" log jelenik meg, adatsorokat nem érinti (idempotens)<br>✓ verifySSOT() futtatva → konzolban minden sor ✓'),
+  '✓ 9 fül látható helyes nevekkel: BEJÖVŐ_SZÁMLÁK, SZÁMLA_TÉTELEK, PROJEKTEK, PARTNEREK, KÖTEGEK, KIMENŐ_SZÁMLÁK, CONFIG, ALLOKÁCIÓK, AUDIT_LOG<br>✓ AUDIT_LOG fül: 7 oszlopos fejléc (Időbélyeg, Felhasználó, Művelet, Sor azonosító, Mező, Előző érték, Új érték), A oszlop datetime formátum, sheet védett (csak szerkesztő írhat)<br>✓ BEJÖVŐ_SZÁMLÁK fejlécek ellenőrzése: A=Számla ID, G=Teljesítés dátuma, H=Fizetési határidő, Q=Státusz, R=Jóváhagyó neve, W=Gmail message ID<br>✓ Q oszlop (Státusz) dropdown: "BEÉRKEZETT" → elfogadja; "ROSSZ_ERTEK" → elutasítja<br>✓ J oszlop (Deviza) dropdown: csak HUF/EUR<br>✓ K oszlop (Kategória) dropdown: PROJEKT/ÁLLANDÓ/MEGOSZTOTT<br>✓ Conditional formatting: Q oszlopba "JÓVÁHAGYVA" írva → sor zöld; "HIÁNYOS_PO" → sárga; "AI_HIBA" → sötétpiros fehér betűvel<br>✓ PROJEKTEK A oszlop regex: "FCA2601" → elfogad; "fca2601" → elutasít; "IMME261" (7 char) → elutasít<br>✓ SZÁMLA_TÉTELEK K oszlop (PO_CONFIDENCE) numerikus: 50 → elfogad; 101 → elutasít; "szoveg" → elutasít<br>✓ SZÁMLA_TÉTELEK J oszlop dropdown: refreshPODropdown_() futtatva → J cellákba kattintva dropdown megjelenik PROJEKTEK.A tartalommal, ABC sorrendben, üres sor nélkül<br>✓ Guard teszt: setupSSOT() újra futtatva → nem duplikálja a füleket, konzolban "Fül már létezik" log jelenik meg, adatsorokat nem érinti (idempotens)<br>✓ verifySSOT() futtatva → konzolban minden sor ✓ (9/9)'),
 T('F0-S3c','Fázis 0','Setup.gs',
   'Setup.gs élesítve: régi SSOT sheet mentve/archiválva, új éles sheet létrehozva autobot@ fiókból a Shared Drive SSOT/ mappájában',
   'Te',false,false,false,true,false,null,
   '✓ Régi sheet HTML exportok megvannak backup-ként<br>✓ Régi sheet átnevezve "[ARCHÍV] Armadillo Pénzügyi Adatbázis"-ra vagy törölve<br>✓ Éles sheet az autobot@ Shared Drive → SSOT/ mappájában van (nem My Drive-ban)<br>✓ Péter és Ági meg tudják nyitni a sheet-et'),
 
 T('F0-S4a','Fázis 0','Validation.gs',
-  'Validation.gs megírva: onEditInstallable() — 4 korai kilépés sorrendben (1. tömeges szerkesztés getNumRows/Cols, 2. rossz fül, 3. rossz oszlop, 4. fejléc sor) + VISSZAUTASÍTVA → partner email + J oszlop FK piros kiemelés + CONFIG hibalog',
+  'Validation.gs megírva: onEditInstallable() — 5 korai kilépés sorrendben (1. tömeges szerkesztés, 2. no-op szerkesztés e.oldValue===e.value, 3. nem figyelt fül, 4. nem figyelt oszlop, 5. fejléc sor) + KOTEG_ID readonly guardrail (visszaállítás + KOTEG_ID_OVERWRITE_ATTEMPT audit + notifyAdmin alert) + JÓVÁHAGYÓ (R oszlop) auto-kitöltése státuszváltozáskor + J oszlop FK piros kiemelés + PO_VALIDÁLT M újraszámítás',
   'Fejlesztő',false,true,false,false,false,null),
 T('F0-S4b','Fázis 0','Validation.gs',
   'Validation.gs tesztelve staging sheeten: installable onEdit trigger létrehozva autobot@ fiókból',
   'Te',false,false,true,false,false,null,
-  'Trigger létrehozás: Apps Script → Triggers (⏰ ikon) → + Add Trigger → onEditInstallable → Táblázatból → Szerkesztéskor → Mentés<br>✓ Staging BEJÖVŐ_SZÁMLÁK Q oszlopba "VISSZAUTASÍTVA" írva → Admin Chat értesítő megérkezett (TEST_MODE: OPS+Finance → Admin webhook, de csak 1× jelenik meg)<br>✓ Tömeges teszt: 3 sor kijelölve a Q oszlopban → Ctrl+V "VISSZAUTASÍTVA" → NEM küld értesítőt (getNumRows > 1 kizárja)<br>✓ Más fülre írva (pl. PROJEKTEK státusz) → azonnal return, semmi nem történik<br>✓ SZÁMLA_TÉTELEK J oszlopba nem létező projektszám → cella háttere piros + note a cellán<br>✓ J oszlopba létező projektszám (pl. FCA2601) → piros háttér és note eltűnik<br>✓ Validációs hibák: cella kiemelés + Executions log (console.warn) — CONFIG fülre nem logol, az konfigurációs adatoknak való<br>⚠️ Partner visszautasító email (Fázis 2 — Task 22/23): Ági sablon kell hozzá, most még nincs implementálva'),
+  'Trigger létrehozás: Apps Script → Triggers (⏰ ikon) → + Add Trigger → onEditInstallable → Táblázatból → Szerkesztéskor → Mentés<br>✓ Staging BEJÖVŐ_SZÁMLÁK Q oszlopba "JÓVÁHAGYVA" írva → R oszlop (Jóváhagyó neve) automatikusan kitöltve a szerkesztő emailjével (Session.getActiveUser())<br>✓ Q oszlopba "VISSZAUTASÍTVA" írva → Admin Chat értesítő megérkezett (TEST_MODE), R oszlop szintén kitöltve<br>✓ No-op teszt: Q cellán Enter nyomva értékváltoztatás nélkül → NEM keletkezett AUDIT_LOG sor, NEM küldött értesítőt<br>✓ Tömeges teszt: 3 sor kijelölve a Q oszlopban → Ctrl+V → NEM küld értesítőt (getNumRows > 1 kizárja)<br>✓ SZÁMLA_TÉTELEK J oszlopba nem létező projektszám → cella háttere piros + note a cellán + M=NEM<br>✓ J oszlopba létező projektszám (pl. FCA2601) + K≥95 → piros háttér eltűnik + M=IGEN<br>✓ KOTEG_ID (V oszlop) felülírási kísérlet → visszaállítja az eredeti értéket + alert megjelenik + AUDIT_LOG-ban KOTEG_ID_OVERWRITE_ATTEMPT sor<br>⚠️ Partner visszautasító email (Fázis 2 — Task 22/23): Ági sablon kell hozzá, most még nincs implementálva'),
+
+T('F0-AuditLog-a','Fázis 0','AuditLog.gs',
+  'AuditLog.gs megírva: 1 core _writeAuditRow_() + 2 wrapper architektúra — logAudit_() user edithez (getActiveUser, e event alapján) + logAuditScript_() script eventhez (getEffectiveUser — mert time-based triggerben nincs aktív session) — 11 action típus lefedve (STATUSZ_VALTOZAS, PAYMENT_CONFIRMED, PO_MODOSITAS, PROJEKT_MODOSITAS, PARTNER_MODOSITAS, CELLAMODOSITAS, KOTEG_ID_OVERWRITE_ATTEMPT, INVOICE_RECEIVED, INVOICE_ERROR, OCR_COMPLETED, OCR_FAILED, BATCH_ASSIGNED) — SOSEM dob kivételt',
+  'Fejlesztő',false,true,false,false,false,null),
+T('F0-AuditLog-b','Fázis 0','AuditLog.gs',
+  'AuditLog.gs tesztelve staging sheeten: AUDIT_LOG fülre íródnak sorok user edit és script event esetén egyaránt',
+  'Te',false,false,true,false,false,null,
+  '✓ BEJÖVŐ_SZÁMLÁK Q oszlopba státusz írva → AUDIT_LOG-ban új sor: B=szerkesztő email, C=STATUSZ_VALTOZAS, D=számlaazonosító (pl. INV-…)<br>✓ Q→UTALVA → C=PAYMENT_CONFIRMED (nem STATUSZ_VALTOZAS)<br>✓ No-op teszt: Q cellán Enter változtatás nélkül → NEM keletkezett AUDIT_LOG sor<br>✓ KOTEG_ID (V) felülírás kísérlet → C=KOTEG_ID_OVERWRITE_ATTEMPT, D=számlaazonosító, F=próbált érték<br>✓ writeTestInvoice() futtatva → AUDIT_LOG-ban C=INVOICE_RECEIVED, D=szamlaId (INV-… formátum, NEM fájlnév!)<br>✓ writeTestError() futtatva → C=INVOICE_ERROR<br>✓ SZÁMLA_TÉTELEK J szerkesztve → C=PO_MODOSITAS<br>✓ PROJEKTEK A szerkesztve → C=PROJEKT_MODOSITAS + J dropdown frissült<br>✓ Összes audit sor B oszlopa: user editnél szerkesztő email, script eventnél autobot@armadillo.hu'),
 
 T('Task 03','Fázis 0','Konfiguráció és adatfeltöltés',
   'Apps Script projekt neve beállítva ("Armadillo Pénzügyi Bot") + CONFIG fül 6 sora kitöltve: HOLIDAYS_2026, HOLIDAYS_2027, WORKING_SATURDAYS_2026, WORKING_SATURDAYS_2027, PO_CONFIDENCE_THRESHOLD, ADMIN_EMAIL — megfelelő VERIFIED/ELLENŐRZENDŐ státuszokkal',
@@ -252,7 +260,7 @@ T('F1-S2b','Fázis 1','GeminiOCR.gs',
   '✓ testAggregatePO() futtatva: konzolban minden eset ✓ jellel zárul<br>✓ Egyetlen PO azonosítva → PO_SUMMARY = konkrét PO érték, aggregált PO_CONFIDENCE = az adott tétel értéke<br>✓ Több különböző PO a tételekben → PO_SUMMARY = "MULTI", PO_CONFIDENCE = MIN(tételek conf.)<br>✓ Legalább 1 tétel nem azonosítható → PO_SUMMARY = "HIÁNYOS", PO_CONFIDENCE = 0, PO_REASONING = "NINCS_PO"<br>✓ ÁLLANDÓ kategóriájú partner számlája → PO_SUMMARY = "N/A", PO ellenőrzés teljesen kihagyva<br>✓ MEGOSZTOTT kategóriájú partner számlája → PO_SUMMARY = "N/A", ugyanúgy kihagyva<br>✓ previewPrompt() konzolban megjeleníti a Gemini promptot — PROJEKTEK lista szerepel benne<br>✓ Gemini key szimuláltan hibás (rossz key beállítva) → withRetry 3× próbál, majd AI_HIBA státusz, notifyAdmin() email megérkezett'),
 
 T('F1-S3a','Fázis 1','SheetWriter.gs',
-  'SheetWriter.gs megírva: writeInvoice(data) — LockService.getScriptLock() tranzakcióban BEJÖVŐ_SZÁMLÁK appendRow + SZÁMLA_TÉTELEK appendRow atomikusan, PO_VALIDÁLT kiszámítása soronként (J∈PROJEKTEK.A AND K≥95 → IGEN), önfejlesztő adatbázis: partner adószám visszaírás PARTNEREK B oszlopba ha üres volt + audit log CONFIG fülre',
+  'SheetWriter.gs megírva: writeInvoiceToSheet() + writeInvoiceError() — LockService tranzakcióban BEJÖVŐ_SZÁMLÁK appendRow + SZÁMLA_TÉTELEK appendRow atomikusan, PO_VALIDÁLT kiszámítása soronként (J∈PROJEKTEK.A AND K≥95 → IGEN, ÁLLANDÓ/MEGOSZTOTT → N/A), INVOICE_RECEIVED + INVOICE_ERROR logAuditScript_() a lockon KÍVÜL hívva',
   'Fejlesztő',false,true,false,false,false,null),
 T('F1-S3b','Fázis 1','SheetWriter.gs',
   'SheetWriter.gs tesztelve staging sheeten: writeTestInvoice() és writeTestError() futtatva',
@@ -407,15 +415,17 @@ createApp({
         getTasksByGroup(group) { return this.currentPhaseTasks.filter(t=>t.group===group); },
         getOwnerClass(owner) { return OWNER_CLASSES[owner]||'bg-slate-100 text-slate-600 border-slate-200'; },
         toggleTask(task) { task.timestamp=task.done?new Date().toLocaleString('hu-HU'):null; this.saveData(); },
-        saveData() { localStorage.setItem('armadilloTrackerV6',JSON.stringify(this.tasks)); },
+        saveData() { localStorage.setItem('armadilloTrackerV7',JSON.stringify(this.tasks)); },
         loadData() {
-            // V6: friss adat
+            // V7: friss adat
+            const s7=localStorage.getItem('armadilloTrackerV7');
+            if(s7){ this.tasks=JSON.parse(s7); return; }
+            // Migráció V4/V5/V6→V7: pipák megmaradnak, title+testDesc az új initialTasks-ból jön
+            // (új feladatok done=false-szal kerülnek be, meglévők megőrzik állapotukat)
             const s6=localStorage.getItem('armadilloTrackerV6');
-            if(s6){ this.tasks=JSON.parse(s6); return; }
-            // Migráció V4/V5→V6: pipák megmaradnak, title+testDesc az új initialTasks-ból jön
             const s5=localStorage.getItem('armadilloTrackerV5');
             const s4=localStorage.getItem('armadilloTrackerV4');
-            const sOld = s5 || s4;
+            const sOld = s6 || s5 || s4;
             if(sOld){
                 const old=JSON.parse(sOld);
                 const oldMap={};
@@ -426,12 +436,22 @@ createApp({
                 });
                 localStorage.removeItem('armadilloTrackerV4');
                 localStorage.removeItem('armadilloTrackerV5');
+                localStorage.removeItem('armadilloTrackerV6');
                 this.saveData();
                 return;
             }
             this.tasks=JSON.parse(JSON.stringify(initialTasks));
         },
-        resetData() { if(confirm('Biztosan törlöd az összes pipát?')){ localStorage.removeItem('armadilloTrackerV5'); this.tasks=JSON.parse(JSON.stringify(initialTasks)); } },
+        resetData() {
+            if(confirm('Biztosan törlöd az összes pipát?')){
+                localStorage.removeItem('armadilloTrackerV4');
+                localStorage.removeItem('armadilloTrackerV5');
+                localStorage.removeItem('armadilloTrackerV6');
+                localStorage.removeItem('armadilloTrackerV7');
+                this.tasks=JSON.parse(JSON.stringify(initialTasks));
+                this.saveData();
+            }
+        },
         exportLog() {
             const sep='═'.repeat(70), line='─'.repeat(70);
             let log=`ARMADILLO PÉNZÜGYI AUTOMATIZÁCIÓ — AUDIT LOG\n${sep}\nGenerálva: ${new Date().toLocaleString('hu-HU')}\nHaladás: ${this.overallProgress}% (${this.overallCompleted}/${this.tasks.length})\n`;
