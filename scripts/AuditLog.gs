@@ -116,7 +116,11 @@ const AUDIT_ENTITAS = Object.freeze({
  */
 function _writeAuditRow_(user, forras, entitas, muvelet, sorAzonId, mezoNev, regiErtek, ujErtek) {
   try {
-    const ss       = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    // Container-bound script: getActiveSpreadsheet() trigger és time-based kontextusból
+    // egyaránt működik, és nem függ a SPREADSHEET_ID kitöltöttségétől.
+    const ss       = SpreadsheetApp.getActiveSpreadsheet()
+                     || (CONFIG.SPREADSHEET_ID ? SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID) : null);
+    if (!ss) return; // SPREADSHEET_ID nincs beállítva ÉS nincs aktív sheet → kihagyjuk
     const logSheet = ss.getSheetByName(CONFIG.TABS.AUDIT_LOG);
     if (!logSheet) return; // setupSSOT előtt — csendesen kihagyja
 
