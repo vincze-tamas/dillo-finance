@@ -168,6 +168,72 @@ function _getOrCreateFolder_(parentFolder, folderName) {
 // Helyette: hungarianMonth(date) hívható közvetlenül (Utils.gs, megosztott függvény).
 
 // ─────────────────────────────────────────────────────────────────────────────
+// REPAIR (egyszer futtatandó javítók)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Helyreállítja az AUDIT_LOG fejlécsorát, ha az elveszett vagy adatsor írta felül.
+ *
+ * Mikor kell futtatni: ha az AUDIT_LOG sor 1-ben nem fejléc, hanem audit adat van.
+ * Mit csinál: sor 1 ELÉ illeszt egy új sort, majd beírja a 9 fejléc cellát.
+ * Meglévő adatok NEM vesznek el — mindenki eggyel lejjebb tolódik.
+ *
+ * Futtatás: Script Editor → repairAuditLogHeaders → ▶ Run
+ */
+function repairAuditLogHeaders() {
+  const ss    = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.TABS.AUDIT_LOG);
+
+  if (!sheet) {
+    console.error('AUDIT_LOG fül nem található!');
+    return;
+  }
+
+  // Ellenőrzés: ha A1 már a helyes fejléc, nem kell javítani
+  const a1 = sheet.getRange('A1').getValue();
+  if (String(a1).trim() === 'Időbélyeg') {
+    console.log('ℹ️  Fejléc rendben van (A1 = "Időbélyeg") — nincs szükség javításra.');
+    return;
+  }
+
+  console.log('Jelenlegi A1 érték: "' + a1 + '" — fejléc hiányzik, javítás...');
+
+  // Sor 1 ELÉ új sor beszúrása (meglévő adatok nem vesznek el)
+  sheet.insertRowBefore(1);
+
+  // Fejléc beírása
+  const headers = [
+    'Időbélyeg',      // A
+    'Felhasználó',    // B
+    'Forrás',         // C
+    'Entitás',        // D
+    'Művelet',        // E
+    'Sor azonosító',  // F
+    'Mező',           // G
+    'Előző érték',    // H
+    'Új érték',       // I
+  ];
+  const headerRange = sheet.getRange(1, 1, 1, headers.length);
+  headerRange.setValues([headers]);
+
+  // Formázás (matching Setup.gs _setupAuditLog_)
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#37474F');
+  headerRange.setFontColor('#FFFFFF');
+  headerRange.setFontSize(11);
+
+  // A oszlop datetime formátum az adatsorokra
+  sheet.getRange(2, 1, Math.max(sheet.getMaxRows() - 1, 999), 1)
+       .setNumberFormat('yyyy-mm-dd hh:mm:ss');
+
+  // Sor 1 befagyasztása
+  sheet.setFrozenRows(1);
+
+  console.log('✅ AUDIT_LOG fejléc helyreállítva — ' + headers.length + ' oszlop, sor 1 befagyasztva.');
+  console.log('   A meglévő ' + (sheet.getLastRow() - 1) + ' audit sor érintetlen.');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CLEANUP (opcionális — csak ha el akarod távolítani a teszt környezetet)
 // ─────────────────────────────────────────────────────────────────────────────
 
