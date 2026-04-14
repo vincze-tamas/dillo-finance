@@ -1,0 +1,105 @@
+Agent
+Spec & quality review — event-driven audit ledger
+I now have everything I need. Here is the full review.
+---
+Show less
+## Code Review: Event-driven Audit Ledger Refactor
+**Overall assessment:** The implementation is well-structured and meets all five planned requirements. The architecture is clean — one core writer, two wrappers with clear ownership, documentation is thorough. The issues below are real and need attention, but none of them break the happy path; they create silent gaps in edge cases.
+---
+### Plan Alignment
+All five required action types are implemented. The `PAYMENT_CONFIRMED` distinction is a justified improvement over the original `STATUSZ_VALTOZAS`. The `_writeAuditRow_` core function correctly uses `openById` rather than `getActiveSpreadsheet`, which was the right call and aligns with the stated requirement. No scope creep detected.
+---
+### Focus Area 1 — `Session.getEffectiveUser()` vs `getActiveUser()` for script events
+**Rating: Correct, but the comment in the docstring is incomplete and could cause future confusion.**
+`Session.getEffectiveUser()` is the right choice here. In a time-based trigger (which is how `processInvoiceWithGemini` is invoked via Gmail polling), `getActiveUser()` returns an empty string because there is no active interactive session. `getEffectiveUser()` returns the script owner (autobot@armadillo.hu) in all server-side contexts including time-based triggers, installable triggers, and manual runs.
+The docstring on `logAuditScript_` says _"az effektív script tulajdonos emailje (autobot@armadillo.hu)"_ — this is accurate but does not explain why `getActiveUser()` was not used. Future maintainers reading this will not know there is a distinction that matters. The comment should add one line explaining that `getActiveUser()` returns empty in trigger context.
+**Suggestion (not critical):** Add to the JSDoc: `// getActiveUser() üres stringet ad vissza trigger kontextusban — ezért getEffectiveUser()`.
+---
+### Focus Area 2 — `OCR_COMPLETED` logged before `writeInvoiceToSheet()` call
+**Rating: Important issue — creates a misleading audit trail in the failure case.**
+The sequence in `GeminiOCR.gs` (lines 64–65, then 92) is:
+1. `OCR_COMPLETED` logged with `metadata.fileName` as the row ID
+2. `writeInvoiceToSheet()` called — this is where `szamlaId` (e.g. `INV-20260414-001`) is generated
+3. `INVOICE_RECEIVED` logged with the real `szamlaId`
+This means the audit log has an `OCR_COMPLETED` row for a file that has no linked `szamlaId` at the time of logging. In the normal case this is just cosmetically inconsistent — a reader has to mentally join `metadata.fileName` to the later `INVOICE_RECEIVED` row. But in the failure case it is actively misleading: if `writeInvoiceToSheet()` throws (caught by the second `try/catch` at line 110), the audit will show `OCR_COMPLETED` (suggesting the invoice was processed) followed by an `INVOICE_ERROR` row, with no indication that `OCR_COMPLETED` was recorded before the write failure. An auditor reviewing just the `OCR_COMPLETED` row would believe the invoice made it to the sheet.
+There is also a gap: the second `try/catch` block (post-processing failure at line 112) calls `writeInvoiceError` which logs `INVOICE_ERROR`, but there is no corresponding `OCR_FAILED` event for that path. The OCR itself succeeded; the failure was in PO matching or status decision. This is a different failure mode and deserves its own action type (e.g. `POSTPROCESS_FAILED`) or at least `OCR_FAILED` should not be reused here since `extracted` was non-null.
+**Recommendation:** Move the `OCR_COMPLETED` log call to after `writeInvoiceToSheet()` returns the `szamlaId`, and use that `szamlaId` as the row ID. The `newVal` can still contain the supplier name and invoice number extracted from OCR.
+```javascript
+const szamlaId = writeInvoiceToSheet(extracted, metadata, poAgg, statusz, kategoria);
+logAuditScript_('OCR_COMPLETED', szamlaId, 'Gemini OCR', '',
+  (extracted.szallito_nev || '?') + ' | ' + (extracted.szamlaszam || '?'));
+```
+This makes the `OCR_COMPLETED` row always have a linkable `szamlaId`, ties it to the SSOT row, and eliminates the ambiguity.
+---
+### Focus Area 3 — `logAuditScript_` inside the lock window in `SheetWriter.gs`
+**Rating: Important issue — lock is not released if `logAuditScript_` throws, but the real problem is the audit call is holding the lock unnecessarily.**
+In `writeInvoiceToSheet` (line 46), `logAuditScript_` is called inside the `try` block that has `lock.releaseLock()` in its `finally`. `logAuditScript_` has its own internal try/catch and must not throw — but its inner `_writeAuditRow_` calls `SpreadsheetApp.openById()` and `appendRow()`, both of which can throw quota exceptions or network errors that bypass the internal catch if they manifest as unchecked runtime exceptions in GAS (rare but not impossible with `appendRow` under load).
+The more concrete problem is that the audit write is holding the LockService lock that is supposed to protect only `_writeBejovoszamlaRow_` and `_writeSzamlaTetelek_`. Those two writes are the critical section. The audit append does not need to be serialized — audit rows do not need to be in lockstep with invoice rows. Holding the lock while doing a second `openById` + `appendRow` (the audit row) extends the lock window unnecessarily and directly hurts throughput for concurrent invoice processing.
+**Recommendation:** Move `logAuditScript_` calls to after `lock.releaseLock()` in both `writeInvoiceToSheet` and `writeInvoiceError`. In `writeInvoiceToSheet` this is straightforward since `szamlaId` is returned and `statusz` is in scope:
+```javascript
+function writeInvoiceToSheet(extracted, metadata, poAgg, statusz, kategoria) {
+  const ss   = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  const lock = acquireLock();
+  let szamlaId;
+  try {
+    szamlaId = generateId('INV');
+    _writeBejovoszamlaRow_(ss, szamlaId, extracted, metadata, poAgg, statusz, kategoria);
+    _writeSzamlaTetelek_(ss, szamlaId, extracted.tetelek, kategoria);
+    console.log('SheetWriter: ' + szamlaId + ' sikeresen írva (' +
+      extracted.tetelek.length + ' tétel)');
+  } finally {
+    lock.releaseLock();
+  }
+  // Audit OUTSIDE the lock — does not need serialization
+  logAuditScript_('INVOICE_RECEIVED', szamlaId, 'BEJÖVŐ_SZÁMLÁK', '', statusz);
+  return szamlaId;
+}
+```
+Note: `szamlaId` will be `undefined` if the `try` block throws before `generateId` runs, so the `logAuditScript_` call after the `finally` is only reached on success — which is exactly the right behavior.
+---
+### Focus Area 4 — `BATCH_ASSIGNED` inside the lock in `BatchGenerator.gs`, 10 invoices × `openById`
+**Rating: Important issue — quota/timeout risk is real under realistic batch sizes.**
+`logAuditScript_` is called inside `rows.forEach` which runs inside the `try` block under `acquireLock()`. Each call to `logAuditScript_` calls `_writeAuditRow_` which calls `SpreadsheetApp.openById()` — this is a quota-counted service call. For a batch of 10 invoices this is 10 extra `openById` calls inside the lock window. GAS time-based triggers have a 6-minute execution limit; `acquireLock()` in this codebase presumably times out at 10 seconds. An `openById` can take 200ms–1s depending on spreadsheet size and network conditions. At 1s per call, 10 calls = 10 additional seconds inside the lock, which directly competes with concurrent invoice processing triggers also waiting to acquire the lock.
+Additionally, the audit `openById` opens the same spreadsheet that `_updateSSOT_` already has open as `ss` (line 307). GAS does not reuse the handle returned by `openById`; each call is a fresh API round-trip. The audit call could have been designed to accept the already-open `ss` object, but `logAuditScript_` is generic and does not have that interface.
+**Recommendation:** Collect the audit calls and execute them after `lock.releaseLock()`, the same pattern recommended for SheetWriter. The `rows` array is available after the lock is released:
+```javascript
+} finally {
+  lock.releaseLock();
+}
+// Audit OUTSIDE the lock
+rows.forEach(function(r) {
+  logAuditScript_('BATCH_ASSIGNED', r.szamlaId, 'KOTEG_ID', '', kotegId);
+});
+```
+This is safe because the KOTEG_ID writes have already committed. The audit log merely records what happened; it does not need to be atomic with the business write.
+---
+### Focus Area 5 — `PAYMENT_CONFIRMED` string comparison in `Validation.gs`
+**Rating: Important issue — fragile string comparison with no normalization.**
+`C:/Users/tamas/Downloads/claude-cowork/Armadillo-finance-v4/scripts/Validation.gs` line 112:
+```javascript
+return String(e.value || '') === 'UTALVA' ? 'PAYMENT_CONFIRMED' : 'STATUSZ_VALTOZAS';
+```
+`e.value` in GAS is the raw string from the cell after the edit. If a user types `" UTALVA"` (leading space), `"utalva"` (lowercase), `"UTALVA "` (trailing space), or pastes with invisible Unicode whitespace, the comparison fails silently and the event is logged as `STATUSZ_VALTOZAS` rather than `PAYMENT_CONFIRMED`. This is particularly risky if Q-column values come from a dropdown — but even dropdowns can have trailing spaces depending on how the validation list was created in `Setup.gs`.
+The GAS `onEdit` event delivers the raw cell value as typed or pasted, without applying any column validation normalization. This is a documented GAS behavior.
+**Recommendation:** Normalize before comparing:
+```javascript
+return String(e.value || '').trim().toUpperCase() === 'UTALVA'
+  ? 'PAYMENT_CONFIRMED' : 'STATUSZ_VALTOZAS';
+```
+This is a one-character change with zero downside. Given that `UTALVA` also drives other logic in `_onBejovoszamlaStatuszChange_` (called at line 125), check whether that path has the same raw comparison — if so, the same fix should be applied there for consistency.
+---
+### Additional Observations Not in the Focus Areas
+**`logAudit_` in `AuditLog.gs` still has a double try/catch with overlapping error handling.** The outer `try` in `logAudit_` catches errors from extracting range/sheet/user values, and then calls `_writeAuditRow_` which has its own `try/catch`. If `_writeAuditRow_` catches and swallows its error, the outer catch in `logAudit_` will never see it. The outer catch's error message `'logAudit_ hiba [' + actionType + ']'` will only fire if something before the `_writeAuditRow_` call throws. This is not broken — it is just redundant and could mislead a debugger. The `console.error` in both layers means errors will appear with different prefixes and it may be unclear which layer failed.
+**The `OCR_FAILED` log in `GeminiOCR.gs` is placed correctly** (before `writeInvoiceError`) so it fires even if `writeInvoiceError` itself fails. This is the right ordering and worth preserving when the other OCR changes are made.
+**`_writeAuditRow_` opens the spreadsheet by ID on every call.** For user edits this is one call per edit event, which is fine. For the batch scenario (10 invoices) and for OCR (which may have a burst of invoices from a Gmail polling run), this accumulates. There is no practical fix without changing the interface to accept an `ss` parameter, which would complicate the API. It is acceptable at current scale but worth noting if invoice volume grows significantly.
+---
+### Summary of Required Actions
+| # | Severity | File | Action |
+|---|----------|------|--------|
+| 1 | Important | `SheetWriter.gs` | Move `logAuditScript_` calls to after `lock.releaseLock()` in both `writeInvoiceToSheet` and `writeInvoiceError` |
+| 2 | Important | `BatchGenerator.gs` | Move `logAuditScript_('BATCH_ASSIGNED', ...)` forEach to after `lock.releaseLock()` |
+| 3 | Important | `GeminiOCR.gs` | Move `OCR_COMPLETED` log to after `writeInvoiceToSheet()` returns `szamlaId`; use `szamlaId` as row ID |
+| 4 | Important | `Validation.gs` | Add `.trim().toUpperCase()` to the `UTALVA` comparison |
+| 5 | Suggestion | `AuditLog.gs` | Expand `logAuditScript_` JSDoc to explain why `getEffectiveUser()` is used over `getActiveUser()` |
+agentId: aa114d88458584605 (use SendMessage with to: 'aa114d88458584605' to continue this agent)
+<usage>total_tokens: 45681

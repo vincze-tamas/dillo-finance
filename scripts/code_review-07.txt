@@ -1,0 +1,67 @@
+Agent
+Spec + quality review — Validation.gs audit + státuszgép
+I now have all the information needed for a thorough review. Let me compile the findings.
+---
+Show less
+### Strengths
+**Architectural soundness of the three-layer audit design** (`_writeAuditRow_` / `logAudit_` / `logAuditScript_`). The separation of concerns is clean: the core writer is call-site agnostic, wrapper #1 owns the `e` event interpretation, wrapper #2 owns time-trigger identity. The rationale comment in `logAuditScript_` explaining `getEffectiveUser` vs `getActiveUser` is excellent and will prevent a recurring category of bug (`AuditLog.gs:182–194`).
+**Strict never-throw contract honoured consistently.** Every public-facing function (`logAudit_`, `logAuditScript_`, `_writeAuditRow_`) has its own `try/catch` with `console.error` fallback. The contract is documented at the file header and cannot be accidentally violated by a future caller.
+**Enum completeness and naming.** `AUDIT_MUVELET` covers all 19 action types including both security-violation types. All call sites in `BatchGenerator.gs`, `GeminiOCR.gs`, and `SheetWriter.gs` were correctly migrated from raw string literals to enum references. No raw strings remain.
+**KOTEG_ID guard ordering is correct.** Audit fires before `setValue(oldVal)` (line 110-111 in Validation.gs), so the attempted value is recorded before the revert — exactly as intended.
+**State machine readability.** The `ATMENETEK` object at `Triggers.gs:330–338` is self-documenting. Using `null` to mean "no constraint" versus `[]` to mean "terminal" is a clever two-value sentinel that avoids a separate terminal-state check.
+**AUDIT_LOG double-lock design.** Sheet protection via `protect()` as a first layer, plus code-based revert in `onEditInstallable`, is the correct defence-in-depth approach for Google Sheets where Workspace admins can override protections.
+---
+### Issues
+#### Critical (Must Fix)
+**C-1: `_getAuditAction_` returns `PROJEKT_MODOSITAS` for ALL PROJEKTEK columns, but the enum comment says it covers only the A column.**
+`Validation.gs:187` — `_getAuditAction_` returns `PROJEKT_MODOSITAS` unconditionally for any column on the PROJEKTEK sheet. The requirement says `PROJEKT_MODOSITAS` maps to "PROJEKTEK A oszlop" and the enum comment in `AuditLog.gs:20` says the same. Edits to any other PROJEKTEK column (B, C, D…) will be logged as `PROJEKT_MODOSITAS` even though conceptually they are a generic cell modification. This is a minor semantic issue, but more importantly it means the claim in `AuditLog.gs:20` that `PROJEKT_MODOSITAS` means specifically "A oszlop" is incorrect as implemented, creating misleading audit records. Fix: either update the enum comment to say "bármely oszlop" to match the implementation, or add column-level discrimination analogous to the `SZAMLA_MODOSITAS` vs `STATUSZ_VALTOZAS` split on BEJÖVŐ_SZÁMLÁK.
+**C-2: `KOTEG_ID` guard has a silent no-op when `e.oldValue` is `undefined`.**
+`Validation.gs:106–127` — The guard condition is `oldVal !== '' && oldVal !== newVal`. When `e.oldValue` is `undefined` (the cell has never been written before), `String(undefined || '').trim()` resolves to `''`, so the condition short-circuits and the entire `if` block is skipped, then execution falls through to `return` on line 127. This is actually correct — you want to allow the first write. However the `return` on line 127 is unconditional: it exits `onEditInstallable` entirely even when `oldVal === ''` and no guard was triggered. This means a first write to the KOTEG_ID column **skips the universal audit log** (step 7) because the `return` on line 127 fires before `logAudit_` on line 131. A user manually setting KOTEG_ID for the first time leaves no audit trail.
+Fix: restructure so that the `return` only fires when the guard was actually triggered:
+```javascript
+if (tabName === CONFIG.TABS.BEJOVO_SZAMLAK && col === CONFIG.COLS.BEJOVO.KOTEG_ID) {
+  const oldVal = String(e.oldValue || '').trim();
+  const newVal = String(value       || '').trim();
+  if (oldVal !== '' && oldVal !== newVal) {
+    logAudit_(e, AUDIT_MUVELET.KOTEG_ID_FELULIRAS_KISERLET);
+    e.range.setValue(oldVal);
+    // ... alert + notifyAdmin ...
+    return; // only here
+  }
+  // fall through to universal audit for first-write case
+}
+```
+---
+#### Important (Should Fix)
+**I-1: Double-audit on forbidden status transition.**
+`Validation.gs:131` fires `logAudit_` (with `STATUSZ_VALTOZAS` or `FIZETES_MEGEROSITVE`) before calling `_onBejovoszamlaStatuszChange_` which then fires `_writeAuditRow_` with `STATUSZ_TILTOTT_ATMENET`. For a forbidden transition the audit log will have two rows: one `STATUSZ_VALTOZAS` (the universal audit, recording the attempted value) and one `STATUSZ_TILTOTT_ATMENET` (the guard audit, also recording the same attempted value). This directly addresses specific question 1: **it is a real problem for audit log consumers**. A naive query for all `STATUSZ_VALTOZAS` records will include rejected transitions alongside legitimate ones, making it appear that the status actually changed to an invalid value. A compliance auditor or automated report would need to cross-reference rows to deduplicate.
+Fix option A (recommended): skip the universal audit log (step 7) when the guard will run, and let the guard's `_writeAuditRow_` serve as the sole record. This requires detecting the status column before calling `logAudit_`. Fix option B (acceptable): document explicitly that `STATUSZ_VALTOZAS` appearing alongside `STATUSZ_TILTOTT_ATMENET` on the same row+timestamp means "attempt recorded, then rejected" — and rely on downstream queries always filtering by `STATUSZ_TILTOTT_ATMENET` to find rejected attempts.
+**I-2: `_getEntityType_` rebuilds a plain object on every call.**
+`AuditLog.gs:228–238` — A new `terkep` object literal is constructed on every invocation. In a trigger context this runs once per edit event (negligible), but the same function is called by `logAudit_` which is already inside a `try/catch` in a hot path. Addressing question 3: **it is not a meaningful performance concern in this context** — GAS trigger execution costs are dominated by API calls (`appendRow`, `getValue`), not object allocation. However, the object rebuild is still unnecessary. Fix: hoist the map to a module-level `const` (built once at script load), which also makes the mapping testable in isolation.
+**I-3: `_getFieldName_` inside `logAudit_` makes a synchronous `getRange(1, col).getValue()` API call for every single edit.**
+`AuditLog.gs:249–255` — This is a quota-consuming Sheets API call on every trigger firing, even for high-frequency edit workloads (e.g., paste operations that pass the multi-cell guard). The header row of each sheet changes almost never. Fix: consider reading the entire header row once per trigger invocation (`getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]`) at the top of `logAudit_` and passing the values down, rather than calling `getValue` on a single cell.
+**I-4: `AUDIT_LOG` guard in `onEditInstallable` calls `logAudit_` before reverting, but `_getRowIdentifier_` on the AUDIT_LOG sheet will fall through to `'sor N'` fallback silently.**
+`Validation.gs:59` / `AuditLog.gs:276–333` — `_getRowIdentifier_` has no case for `CONFIG.TABS.AUDIT_LOG`, so the row identifier in the tamper-attempt log entry will always be `'sor N'` (a number). This is cosmetic but means you lose the actual AUDIT_LOG row reference. Also the entity returned by `_getEntityType_` for `AUDIT_LOG` tab name will be `'ISMERETLEN'` since AUDIT_LOG is not in the `terkep`. Fix: add `AUDIT_LOG` as an explicit case in `_getEntityType_` returning a dedicated value (e.g., `'AUDIT_LOG'`), or define an `AUDIT_ENTITAS.AUDIT_LOG` enum value.
+---
+#### Minor (Nice to Have)
+**M-1: `AUDIT_LOG` sheet protection removal in `_setupAuditLog_` iterates `getProtections(SHEET)` but does not handle `RANGE`-type protections.**
+`Setup.gs` (diff line ~478) — If a previous setup run accidentally created range-level protections on AUDIT_LOG, they would survive the cleanup. Not a functional issue given normal usage, but worth a note in the comment.
+**M-2: `_ensureTimeTrigger_` for `MORNING_DIGEST` and `AFTERNOON_BATCH` uses `everyDays(1)` which schedules within a 1-hour window, not exactly at 09:00 and 14:00.**
+`Triggers.gs:105` — `atHour(hour)` specifies the hour but GAS executes the trigger at an unpredictable minute within that hour. This is a Google Apps Script platform constraint, not a bug in the code, but the comment claiming `14:00` is slightly misleading. Minor documentation fix.
+**M-3: `HIÁNYOS_PO` is listed in `_onBejovoszamlaStatuszChange_` ATMENETEK but there is no guard that prevents a user from manually typing a status value that the script normally sets (like `AI_HIBA` or `LOCK_TIMEOUT`).**
+`Triggers.gs:330–338` — The state machine only guards forward transitions from known states. A user who manually types `AI_HIBA` into the status cell when the old value is `BEÉRKEZETT` will be permitted (since `BEÉRKEZETT` allows only `JÓVÁHAGYVA`/`VISSZAUTASÍTVA` — wait, actually this case IS blocked by the guard). Re-checking: a user typing `AI_HIBA` from `BEÉRKEZETT` is correctly blocked. This minor is actually a non-issue. The state machine is exhaustive for question 6: all 7 known states are covered, empty old value is handled as a bypass for script first-write, and unknown values fall through with `null` for forward compatibility.
+**M-4: Typo in `_validateTetelRow_` error note.**
+`Validation.gs:233` — `'PO nem találh a PROJEKTEK-ben: '` — missing `ó` ("találh" should be "található"). Cosmetic but visible to end users.
+---
+### Answers to Specific Questions
+**1. Audit-before-validation ordering (STATUSZ_VALTOZAS then STATUSZ_TILTOTT_ATMENET):** This is a real problem, not just acceptable. The universal audit fires unconditionally at step 7 with a `STATUSZ_VALTOZAS` action type, then the guard fires `STATUSZ_TILTOTT_ATMENET`. A forbidden transition produces two rows where the first appears to be a valid status change. This is Issue I-1 above.
+**2. `_writeAuditRow_` called directly from Triggers.gs (no `e` event):** Yes, this is the correct design. `logAudit_()` requires the `e` event object to extract user, old value, new value, and row/column context. Since `_onBejovoszamlaStatuszChange_` is called with already-extracted string values and no event reference, direct `_writeAuditRow_` is the only option. The call site correctly hardcodes `AUDIT_FORRAS.FELHASZNALO` and reads `Session.getActiveUser()` directly (line 591 in the diff). This is correct.
+**3. `_getEntityType_` rebuilds a local object on every call:** Not a performance concern in trigger context (see I-2), but it is unnecessary allocation. The fix is architectural tidiness, not performance.
+**4. `getUi().alert()` in installable onEdit trigger:** Yes, it works correctly. `SpreadsheetApp.getUi()` is available in installable triggers that are invoked from user interaction (which `onEditInstallable` always is by definition). The GAS documentation confirms that `getUi()` throws only in time-based or other headless triggers. There is no risk here.
+**5. KOTEG_ID guard with `e.oldValue` undefined:** The guard correctly does not fire (via `oldVal !== ''` short-circuit). However the unconditional `return` at line 127 silently drops the universal audit for the first-write case. This is Issue C-2 above.
+**6. State machine exhaustiveness:** The state machine covers all 7 known status values. Empty old value (first write) is explicitly allowed. Unknown old values are allowed via the `null` forward-compat path. The machine is exhaustive for all currently defined statuses.
+---
+### Assessment
+**Ready to merge?** No — with two fixes required.
+**Reasoning:** C-2 (first write to KOTEG_ID column leaves no audit trail due to an unconditional early return) is a correctness bug in the audit coverage, and I-1 (double-audit on forbidden status transitions misleads log consumers) will cause ongoing operational confusion. Both are straightforward to fix before merge. Everything else — enum design, never-throw contract, state machine, AUDIT_LOG write protection, caller migrations — is solid and production-quality.
+agentId: a66ae44bb95dd46bf (use SendMessage with to: 'a66ae44bb95dd46bf' to continue this agent)
