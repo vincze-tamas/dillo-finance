@@ -597,10 +597,11 @@ function _setupAuditLog_(sheet) {
     'Szerkesztési kísérlet visszaállítva + naplózva.\n\n' +
     'Forrás értékek: FELHASZNALO | RENDSZER\n\n' +
     'Entitás értékek: SZAMLA | SZAMLA_TETEL | PROJEKT | PARTNER |\n' +
-    '                 KOTEG | KIMENO_SZAMLA | KONFIG | ALLOKACIO\n\n' +
+    '                 KOTEG | KIMENO_SZAMLA | KONFIG | ALLOKACIO | AUDIT_LOG\n\n' +
     'Felhasználói szerkesztés (Forrás=FELHASZNALO):\n' +
-    '  STATUSZ_VALTOZAS                 — BEJÖVŐ_SZÁMLÁK Q (nem fizetés megerősítés)\n' +
+    '  STATUSZ_VALTOZAS                 — BEJÖVŐ_SZÁMLÁK Q (érvényes, nem UTALVA)\n' +
     '  FIZETES_MEGEROSITVE              — BEJÖVŐ_SZÁMLÁK Q → UTALVA\n' +
+    '  STATUSZ_TILTOTT_ATMENET          — tiltott státuszátmenet kísérlet (visszaállítva)\n' +
     '  SZAMLA_MODOSITAS                 — BEJÖVŐ_SZÁMLÁK egyéb oszlop\n' +
     '  PO_MODOSITAS                     — SZÁMLA_TÉTELEK J/K oszlop\n' +
     '  TETEL_MODOSITAS                  — SZÁMLA_TÉTELEK egyéb oszlop\n' +

@@ -17,7 +17,7 @@
  *   SZAMLA_MODOSITAS                 — BEJÖVŐ_SZÁMLÁK egyéb oszlop kézzel javítva
  *   PO_MODOSITAS                     — SZÁMLA_TÉTELEK J/K oszlop
  *   TETEL_MODOSITAS                  — SZÁMLA_TÉTELEK egyéb oszlop
- *   PROJEKT_MODOSITAS                — PROJEKTEK A oszlop
+ *   PROJEKT_MODOSITAS                — PROJEKTEK bármely oszlopa
  *   PARTNER_MODOSITAS                — PARTNEREK H oszlop
  *   KOTEG_MODOSITAS                  — KÖTEGEK fül bármely oszlop
  *   KIMENO_SZAMLA_MODOSITAS          — KIMENŐ_SZÁMLÁK fül bármely oszlop
@@ -93,6 +93,7 @@ const AUDIT_ENTITAS = Object.freeze({
   KIMENO_SZAMLA: 'KIMENO_SZAMLA',  // KIMENŐ_SZÁMLÁK
   KONFIG:        'KONFIG',         // CONFIG
   ALLOKACIO:     'ALLOKACIO',      // ALLOKÁCIÓK
+  AUDIT_LOG:     'AUDIT_LOG',      // az AUDIT_LOG védelmi eseményeihez (AUDITNAPLO_SZERKESZTESI_KISERLET)
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -222,20 +223,30 @@ function logAuditScript_(muvelet, entitas, sorAzonId, mezoNev, regiErtek, ujErte
  * Fül neve → AUDIT_ENTITAS értéke.
  * Ismeretlen fül esetén 'ISMERETLEN' — nem dob kivételt.
  *
+ * Lazy init cache: az objektum egyszer épül fel az első hívásnál (nem minden trigger
+ * futásnál), ezután a var-ban él. CONFIG.TABS értékeit load-time-ban nem lehet megbízhatóan
+ * kiértékelni module-level const-ban (GAS fájl-betöltési sorrend nem garantált), ezért
+ * ez a minta biztonságosabb mint a top-level Object.freeze({}).
+ *
  * @param {string} tabName
  * @returns {string}
  */
+var _entityTerkep_ = null; // lazy init — első hívásig null
+
 function _getEntityType_(tabName) {
-  const terkep = {};
-  terkep[CONFIG.TABS.BEJOVO_SZAMLAK]  = AUDIT_ENTITAS.SZAMLA;
-  terkep[CONFIG.TABS.SZAMLA_TETELEK]  = AUDIT_ENTITAS.SZAMLA_TETEL;
-  terkep[CONFIG.TABS.PROJEKTEK]       = AUDIT_ENTITAS.PROJEKT;
-  terkep[CONFIG.TABS.PARTNEREK]       = AUDIT_ENTITAS.PARTNER;
-  terkep[CONFIG.TABS.KOTEGEK]         = AUDIT_ENTITAS.KOTEG;
-  terkep[CONFIG.TABS.KIMENO_SZAMLAK]  = AUDIT_ENTITAS.KIMENO_SZAMLA;
-  terkep[CONFIG.TABS.CONFIG]          = AUDIT_ENTITAS.KONFIG;
-  terkep[CONFIG.TABS.ALLOKACIOK_TAB]  = AUDIT_ENTITAS.ALLOKACIO;
-  return terkep[tabName] || 'ISMERETLEN';
+  if (!_entityTerkep_) {
+    _entityTerkep_ = {};
+    _entityTerkep_[CONFIG.TABS.BEJOVO_SZAMLAK]  = AUDIT_ENTITAS.SZAMLA;
+    _entityTerkep_[CONFIG.TABS.SZAMLA_TETELEK]  = AUDIT_ENTITAS.SZAMLA_TETEL;
+    _entityTerkep_[CONFIG.TABS.PROJEKTEK]       = AUDIT_ENTITAS.PROJEKT;
+    _entityTerkep_[CONFIG.TABS.PARTNEREK]       = AUDIT_ENTITAS.PARTNER;
+    _entityTerkep_[CONFIG.TABS.KOTEGEK]         = AUDIT_ENTITAS.KOTEG;
+    _entityTerkep_[CONFIG.TABS.KIMENO_SZAMLAK]  = AUDIT_ENTITAS.KIMENO_SZAMLA;
+    _entityTerkep_[CONFIG.TABS.CONFIG]          = AUDIT_ENTITAS.KONFIG;
+    _entityTerkep_[CONFIG.TABS.ALLOKACIOK_TAB]  = AUDIT_ENTITAS.ALLOKACIO;
+    _entityTerkep_[CONFIG.TABS.AUDIT_LOG]       = AUDIT_ENTITAS.AUDIT_LOG;
+  }
+  return _entityTerkep_[tabName] || 'ISMERETLEN';
 }
 
 /**

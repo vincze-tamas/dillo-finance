@@ -122,8 +122,9 @@ function onEditInstallable(e) {
         'Eredeti érték visszaállítva: ' + oldVal + '\n\n' +
         'A kísérlet naplózva és az IT értesítve.'
       );
+      return; // csak guard-olt esetben — első írás áteső (audit is logolva alább)
     }
-    return;
+    // oldVal üres (első írás) VAGY azonos értékre mentés → fall-through universal audithoz
   }
 
   // ── UNIVERZÁLIS AUDIT LOG — minden üzleti fül, minden oszlop
@@ -173,8 +174,13 @@ function onEditInstallable(e) {
 function _getAuditAction_(tabName, col, e) {
   if (tabName === CONFIG.TABS.BEJOVO_SZAMLAK) {
     if (col === CONFIG.COLS.BEJOVO.STATUSZ) {
-      // UTALVA → PAYMENT_CONFIRMED (Péter zárja le a köteg utalást)
-      return String(e.value || '').trim().toUpperCase() === 'UTALVA'
+      const ujStr   = String(e.value    || '').trim();
+      const regiStr = String(e.oldValue || '').trim();
+      // Tiltott átmenet → STATUSZ_TILTOTT_ATMENET (egyetlen bejegyzés, nincs dupla log)
+      // _isStatuszTiltott_ definiálva: Triggers.gs module-level
+      if (_isStatuszTiltott_(regiStr, ujStr)) return AUDIT_MUVELET.STATUSZ_TILTOTT_ATMENET;
+      // UTALVA → Péter zárja le a köteg utalást
+      return ujStr.toUpperCase() === 'UTALVA'
         ? AUDIT_MUVELET.FIZETES_MEGEROSITVE : AUDIT_MUVELET.STATUSZ_VALTOZAS;
     }
     return AUDIT_MUVELET.SZAMLA_MODOSITAS; // egyéb oszlop (pl. kézzel javított összeg, PO_REASONING)
@@ -230,7 +236,7 @@ function _validateTetelRow_(sheet, row, col, value) {
         valid = false;
         errors.push('PO "' + poStr + '" nem szerepel a PROJEKTEK fülön (A oszlop)');
         _setCellError_(sheet, row, CONFIG.COLS.TETEL.PO,
-          'PO nem találh a PROJEKTEK-ben: ' + poStr);
+          'PO nem található a PROJEKTEK-ben: ' + poStr);
       } else {
         _clearCellError_(sheet, row, CONFIG.COLS.TETEL.PO);
       }

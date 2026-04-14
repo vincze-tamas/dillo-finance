@@ -293,6 +293,44 @@ function _getExistingTriggerFunctions_() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// STÁTUSZGÉP — KÖZÖS STATE MACHINE (Validation.gs + _onBejovoszamlaStatuszChange_ is használja)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Érvényes státusz átmenetek definíciója.
+ * Kulcs = régi státusz, érték = megengedett új státuszok tömbje.
+ * Üres tömb = terminális (semmi nem engedett). Hiányzó kulcs = ismeretlen → nincs korlát.
+ *
+ * Module-level Object.freeze — egyszer épül, NEM épül újra minden trigger hívásnál.
+ * Validation.gs és _onBejovoszamlaStatuszChange_ egyaránt innen olvas.
+ */
+const STATUSZ_ATMENETEK_ = Object.freeze({
+  'BEÉRKEZETT':    ['JÓVÁHAGYVA', 'VISSZAUTASÍTVA'],
+  'HIÁNYOS_PO':    ['JÓVÁHAGYVA', 'VISSZAUTASÍTVA', 'BEÉRKEZETT'],
+  'AI_HIBA':       ['BEÉRKEZETT'],
+  'LOCK_TIMEOUT':  ['BEÉRKEZETT'],
+  'JÓVÁHAGYVA':    ['UTALVA', 'VISSZAUTASÍTVA'],
+  'VISSZAUTASÍTVA': [],  // terminális
+  'UTALVA':         [],  // terminális
+});
+
+/**
+ * Megvizsgálja, hogy a régi → új státusz átmenet tiltott-e.
+ * Felhasználja: Validation.gs _getAuditAction_() + _onBejovoszamlaStatuszChange_() guard.
+ *
+ * @param {string} regiStatusz - előző státusz ('' ha cella üres volt)
+ * @param {string} ujStatusz   - új státusz
+ * @returns {boolean} true = TILTOTT, false = engedélyezett
+ */
+function _isStatuszTiltott_(regiStatusz, ujStatusz) {
+  if (!regiStatusz) return false; // üres régi → script first write → mindig engedett
+  const megengedett = STATUSZ_ATMENETEK_.hasOwnProperty(regiStatusz)
+    ? STATUSZ_ATMENETEK_[regiStatusz]
+    : null; // ismeretlen régi érték → engedjük (forward compat)
+  return megengedett !== null && megengedett.indexOf(ujStatusz) === -1;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // VALIDÁCIÓ.GS KIEGÉSZÍTÉS — STÁTUSZ VÁLTOZÁS DETEKTÁLÁS
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -324,55 +362,32 @@ function _onBejovoszamlaStatuszChange_(sheet, row, ujStatusz, regiStatusz) {
   const c = CONFIG.COLS.BEJOVO;
 
   // ── STÁTUSZGÉP GUARD ──────────────────────────────────────────────────────
-  // Érvényes átmenetek: kulcs = régi státusz, érték = megengedett új státuszok tömbje.
-  // Terminális státusznál üres tömb → semmilyen átmenet nem megengedett.
-  // Ismeretlen régi státusz (pl. jövőbeni értékek) → engedjük át (null = nincs korlát).
-  const ATMENETEK = {
-    'BEÉRKEZETT':    ['JÓVÁHAGYVA', 'VISSZAUTASÍTVA'],
-    'HIÁNYOS_PO':    ['JÓVÁHAGYVA', 'VISSZAUTASÍTVA', 'BEÉRKEZETT'],
-    'AI_HIBA':       ['BEÉRKEZETT'],
-    'LOCK_TIMEOUT':  ['BEÉRKEZETT'],
-    'JÓVÁHAGYVA':    ['UTALVA', 'VISSZAUTASÍTVA'],
-    'VISSZAUTASÍTVA': [],  // terminális
-    'UTALVA':         [],  // terminális
-  };
+  // STATUSZ_ATMENETEK_ és _isStatuszTiltott_() fentebb definiálva (module-level).
+  // Audit: NEM hívjuk _writeAuditRow_-t itt — a Validation.gs universal audit
+  // (_getAuditAction_) már STATUSZ_TILTOTT_ATMENET action-nel logolta.
+  // Így pontosan 1 audit bejegyzés keletkezik (dupla log elkerülve).
 
   const regiTrimmed = regiStatusz.trim();
   const ujTrimmed   = ujStatusz.trim();
 
-  // Üres régi érték → script/setup első beírása → engedjük át
-  if (regiTrimmed !== '') {
-    const megengedett = ATMENETEK.hasOwnProperty(regiTrimmed)
-      ? ATMENETEK[regiTrimmed]
-      : null; // ismeretlen régi érték → nem blokkoljuk (forward compat)
+  if (_isStatuszTiltott_(regiTrimmed, ujTrimmed)) {
+    // 1. Visszaállítás
+    sheet.getRange(row, c.STATUSZ).setValue(regiTrimmed);
 
-    if (megengedett !== null && megengedett.indexOf(ujTrimmed) === -1) {
-      // ── TILTOTT ÁTMENET ───────────────────────────────────────────────────
-      // 1. Visszaállítás az eredeti értékre
-      sheet.getRange(row, c.STATUSZ).setValue(regiTrimmed);
+    // 2. Felhasználói értesítő — terminális vs. nem engedélyezett eset eltér
+    const megengedett = STATUSZ_ATMENETEK_.hasOwnProperty(regiTrimmed)
+      ? STATUSZ_ATMENETEK_[regiTrimmed] : [];
+    const reszletek = (megengedett.length === 0)
+      ? '"' + regiTrimmed + '" végleges státusz — nem módosítható.'
+      : '"' + regiTrimmed + '" → "' + ujTrimmed + '" nem engedélyezett.\n' +
+        'Megengedett átmenet(ek): ' + megengedett.join(' / ');
 
-      // 2. Audit: közvetlen _writeAuditRow_ hívás — logAudit_() nem érhető el itt
-      //    (nincs `e` event objektum), de a forrás FELHASZNALO és az entitás SZAMLA
-      const szamlaIdAudit = String(
-        sheet.getRange(row, c.SZAMLA_ID).getValue() || ('sor ' + row));
-      const userAudit = Session.getActiveUser().getEmail() || 'ismeretlen';
-      _writeAuditRow_(userAudit, AUDIT_FORRAS.FELHASZNALO, AUDIT_ENTITAS.SZAMLA,
-        AUDIT_MUVELET.STATUSZ_TILTOTT_ATMENET,
-        szamlaIdAudit, 'Státusz', regiTrimmed, ujTrimmed);
-
-      // 3. Felhasználói értesítő — terminális vs. nem engedélyezett eset eltér
-      const reszletek = (megengedett.length === 0)
-        ? '"' + regiTrimmed + '" végleges státusz — nem módosítható.'
-        : '"' + regiTrimmed + '" → "' + ujTrimmed + '" nem engedélyezett.\n' +
-          'Megengedett átmenet(ek): ' + megengedett.join(' / ');
-
-      SpreadsheetApp.getUi().alert(
-        '⛔ Érvénytelen státusz változtatás!\n\n' +
-        reszletek + '\n\n' +
-        'Eredeti érték visszaállítva. A kísérlet naplózva.'
-      );
-      return; // Korai kilépés — chat értesítő és auto-fill NEM fut le
-    }
+    SpreadsheetApp.getUi().alert(
+      '⛔ Érvénytelen státusz változtatás!\n\n' +
+      reszletek + '\n\n' +
+      'Eredeti érték visszaállítva. A kísérlet naplózva.'
+    );
+    return; // Korai kilépés — chat értesítő és auto-fill NEM fut le
   }
 
   // ── ÉRVÉNYES ÁTMENET — sordata olvasás, auto-fill, chat értesítő ─────────
