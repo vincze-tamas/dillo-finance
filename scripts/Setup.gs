@@ -589,16 +589,21 @@ function _setupAuditLog_(sheet) {
 
   // Fejléc magyarázat
   sheet.getRange('A1').setNote(
-    'Automatikusan töltődik — kézzel ne szerkeszd.\n' +
-    'Minden BEJÖVŐ_SZÁMLÁK / SZÁMLA_TÉTELEK / PROJEKTEK / PARTNEREK\n' +
-    'szerkesztési esemény ide kerül az onEditInstallable triggerből.\n\n' +
-    'Műveletek:\n' +
-    '  STATUSZ_VALTOZAS — Q oszlop változás\n' +
-    '  PO_MODOSITAS — SZÁMLA_TÉTELEK J/K oszlop\n' +
-    '  PROJEKT_MODOSITAS — PROJEKTEK A oszlop\n' +
-    '  PARTNER_MODOSITAS — PARTNEREK H oszlop\n' +
-    '  CELLAMODOSITAS — egyéb figyelt mező\n' +
-    '  KOTEG_ID_OVERWRITE_ATTEMPT — tiltott felülírási kísérlet (visszaállítva)'
+    'Event-driven audit ledger — kézzel ne szerkeszd.\n\n' +
+    'USER EDIT események (onEditInstallable):\n' +
+    '  STATUSZ_VALTOZAS          — Q oszlop változás\n' +
+    '  PAYMENT_CONFIRMED         — Q → UTALVA (Péter zárja le)\n' +
+    '  PO_MODOSITAS              — SZÁMLA_TÉTELEK J/K oszlop\n' +
+    '  PROJEKT_MODOSITAS         — PROJEKTEK A oszlop\n' +
+    '  PARTNER_MODOSITAS         — PARTNEREK H oszlop\n' +
+    '  CELLAMODOSITAS            — egyéb figyelt mező\n' +
+    '  KOTEG_ID_OVERWRITE_ATTEMPT — tiltott felülírás (visszaállítva)\n\n' +
+    'SCRIPT események (logAuditScript_):\n' +
+    '  INVOICE_RECEIVED  — SheetWriter: számla beírva\n' +
+    '  INVOICE_ERROR     — SheetWriter: AI_HIBA/LOCK_TIMEOUT sor\n' +
+    '  OCR_COMPLETED     — GeminiOCR: PDF feldolgozva\n' +
+    '  OCR_FAILED        — GeminiOCR: Gemini hiba\n' +
+    '  BATCH_ASSIGNED    — BatchGenerator: KOTEG_ID beírva'
   );
 
   console.log('  → AUDIT_LOG kész (7 oszlop, datetime formátum)');

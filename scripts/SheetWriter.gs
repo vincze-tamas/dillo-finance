@@ -42,6 +42,9 @@ function writeInvoiceToSheet(extracted, metadata, poAgg, statusz, kategoria) {
     console.log('SheetWriter: ' + szamlaId + ' sikeresen írva (' +
       extracted.tetelek.length + ' tétel)');
 
+    // Audit: számla beérkezett az SSOT-ba
+    logAuditScript_('INVOICE_RECEIVED', szamlaId, 'BEJÖVŐ_SZÁMLÁK', '', statusz);
+
   } finally {
     lock.releaseLock();
   }
@@ -72,6 +75,10 @@ function writeInvoiceError(metadata, statuszKod, errorMessage) {
       const row      = _buildErrorRow_(szamlaId, metadata, statuszKod, errorMessage);
       sheet.appendRow(row);
       console.log('SheetWriter (hiba): ' + szamlaId + ' → ' + statuszKod);
+
+      // Audit: hibás feldolgozás sor beírva
+      logAuditScript_('INVOICE_ERROR', szamlaId, 'BEJÖVŐ_SZÁMLÁK', '',
+        statuszKod + ' | ' + (errorMessage || '').substring(0, 200));
     } finally {
       lock.releaseLock();
     }

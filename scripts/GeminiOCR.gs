@@ -60,8 +60,15 @@ function processInvoiceWithGemini(pdfBlob, metadata) {
     console.log('  OCR kész: ' + extracted.szallito_nev +
       ' | ' + extracted.szamlaszam + ' | ' + extracted.kelt);
 
+    // Audit: Gemini sikeresen feldolgozta a PDF-et (szamlaId még nincs → fájlnév az ID)
+    logAuditScript_('OCR_COMPLETED', metadata.fileName, 'Gemini OCR', '',
+      (extracted.szallito_nev || '?') + ' | ' + (extracted.szamlaszam || '?'));
+
   } catch (err) {
     console.error('GeminiOCR hiba: ' + err.message);
+    // Audit: OCR sikertelen
+    logAuditScript_('OCR_FAILED', metadata.fileName, 'Gemini OCR', '',
+      err.message.substring(0, 200));
     // AI_HIBA státuszú sort írunk a sheet-be
     writeInvoiceError(metadata, 'AI_HIBA', err.message);
     notifyAdmin('GeminiOCR feldolgozási hiba', metadata.fileName + ': ' + err.message, err);
