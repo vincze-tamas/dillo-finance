@@ -328,7 +328,9 @@ function _parseGeminiResponse_(rawJson) {
       afa_szazalek:  (t.afa_szazalek !== null && t.afa_szazalek !== undefined) ? Number(t.afa_szazalek) : 27,
       afa_osszeg:    Number(t.afa_osszeg)  || 0,
       brutto:        Number(t.brutto)      || 0,
-      po:            t.po            || null,
+      // Gemini structured output olykor string "null"-t ad vissza JS null helyett.
+      // String "null" truthy → az aggregátor érvényes PO-nak kezelné → explicit szanitizálás.
+      po:            (t.po && String(t.po).trim().toLowerCase() !== 'null') ? String(t.po).trim() : null,
       po_confidence: Number(t.po_confidence) || 0,
       po_reasoning:  t.po_reasoning  || 'Nem azonosítható',
     };
