@@ -300,7 +300,7 @@ function writeTestInvoice() {
   writeInvoiceToSheet(extracted, metadata, poAgg, statusz, kategoria);
   console.log('✅ Teszt számla sikeresen írva. Ellenőrizd:');
   console.log('   BEJÖVŐ_SZÁMLÁK: új sor N=TEST2601, O=88, Q=HIÁNYOS_PO');
-  console.log('   SZÁMLA_TÉTELEK: 2 sor, M oszlop: NEM (conf 88<95), NEM (conf 88<95)');
+  console.log('   SZÁMLA_TÉTELEK: 2 sor, M oszlop: IGEN (conf 97≥95), NEM (conf 88<95)');
 }
 
 /**
