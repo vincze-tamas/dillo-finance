@@ -22,10 +22,10 @@ const TEST_MODE = true; // ← EGYETLEN KAPCSOLÓ: true = teszt, false = éles
 
 const _IDS_ = {
   test: {
-    SPREADSHEET_ID:    '',  // ← TestSetup.gs futtatása után ide kerül
-    INVOICES_FOLDER_ID:'',  // ← Bejövő számlák TEST mappa ID
-    REJECTED_FOLDER_ID:'',  // ← Visszautasított TEST mappa ID
-    BATCHES_FOLDER_ID: '',  // ← Kötegek TEST mappa ID
+    SPREADSHEET_ID:    '1gvrGozbWSTjxwQPNSAvFiV667CSNfnqNxYKBaBKem8A',
+    INVOICES_FOLDER_ID:'13tLN9I2pqtFxR0BSygEkyhe-PS6TH82A',
+    REJECTED_FOLDER_ID:'1j53skGIo7pZHIZuEWP_aYHqlYp_8PIzJ',
+    BATCHES_FOLDER_ID: '14QqekCTn8_uBMUzFhstIuL3Itj1iJXj8',
   },
   prod: {
     SPREADSHEET_ID:    '',  // ← Éles SSOT sheet ID (Fázis 0 Task 01 után)
@@ -42,9 +42,9 @@ const _IDS_ = {
 const _WEBHOOKS_ = {
   test: {
     // Tesztüzemmódban minden értesítő az Admin webhook-ra megy
-    OPS:     '', // ← Admin webhook URL (P2 task után)
-    FINANCE: '', // ← Admin webhook URL (P2 task után)
-    ADMIN:   '', // ← Admin webhook URL (P2 task után)
+    OPS:     'https://chat.googleapis.com/v1/spaces/AAQARsbhDE4/messages?key=REDACTED_KEY&token=REDACTED_TOKEN',
+    FINANCE: 'https://chat.googleapis.com/v1/spaces/AAQARsbhDE4/messages?key=REDACTED_KEY&token=REDACTED_TOKEN',
+    ADMIN:   'https://chat.googleapis.com/v1/spaces/AAQARsbhDE4/messages?key=REDACTED_KEY&token=REDACTED_TOKEN',
   },
   prod: {
     OPS:     '', // ← 🟢 Pénzügy-Jóváhagyások space webhook (Ági + Márk)
@@ -59,9 +59,9 @@ const _WEBHOOKS_ = {
 
 const _EMAILS_ = {
   test: {
-    ADMIN:   'autobot@armadillo.hu', // Tesztben minden admin email ide megy
-    OPS:     'autobot@armadillo.hu',
-    FINANCE: 'autobot@armadillo.hu',
+    ADMIN:   'vincze.tamas.ev@gmail.com',
+    OPS:     'vincze.tamas.ev@gmail.com',
+    FINANCE: 'vincze.tamas.ev@gmail.com',
   },
   prod: {
     ADMIN:   'autobot@armadillo.hu',
