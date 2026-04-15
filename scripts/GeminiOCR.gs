@@ -9,7 +9,7 @@
  *   → SheetWriter hívás (atomikus írás)
  *   → Visszaadja { szallitoNev, szamlaszam, kelt } a Drive fájl átnevezéséhez
  *
- * GEMINI MODEL: gemini-2.0-flash-lite
+ * GEMINI MODEL: gemini-2.5-flash
  * API KEY: PropertiesService → 'GEMINI_API_KEY' (getGeminiApiKey() — Config.gs)
  */
 
@@ -17,7 +17,7 @@
 // KONSTANSOK
 // ─────────────────────────────────────────────────────────────────────────────
 
-const GEMINI_MODEL    = 'gemini-2.0-flash-lite';
+const GEMINI_MODEL    = 'gemini-2.5-flash';
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
 // ─────────────────────────────────────────────────────────────────────────────
