@@ -47,7 +47,7 @@ function notifyNewInvoice(szamlaId, szallitoNev, osszeg, deviza, statusz, driveU
            '• Szállító: *' + szallitoNev + '*\n' +
            '• Összeg: ' + osszeFormatted + '\n' +
            '• Azonosító: `' + szamlaId + '`\n' +
-           '• <' + driveUrl + '|PDF megnyitása>' + sheetLink;
+           '• <' + driveUrl + '|Számla PDF megnyitása>' + sheetLink;
     _sendToWebhook_(CONFIG.CHAT_WEBHOOK_OPS, text);
 
   } else if (statusz === 'HIÁNYOS_PO') {
@@ -55,15 +55,15 @@ function notifyNewInvoice(szamlaId, szallitoNev, osszeg, deviza, statusz, driveU
            '• Szállító: *' + szallitoNev + '*\n' +
            '• Összeg: ' + osszeFormatted + '\n' +
            '• Azonosító: `' + szamlaId + '`\n' +
-           '• Teendő: BEJÖVŐ_SZÁMLÁK fülön N oszlop ellenőrzése\n' +
-           '• <' + driveUrl + '|PDF megnyitása>' + sheetLink;
+           '• <' + sheetUrl + '|Teendő: BEJÖVŐ_SZÁMLÁK fülön N oszlop ellenőrzése>\n' +
+           '• <' + driveUrl + '|Számla PDF megnyitása>';
     _sendToWebhook_(CONFIG.CHAT_WEBHOOK_OPS, text);
 
   } else if (statusz === 'AI_HIBA') {
     text = icon + ' *' + prefix + 'OCR feldolgozás sikertelen*\n' +
            '• Szállító: ' + (szallitoNev || 'ismeretlen') + '\n' +
            '• Azonosító: `' + szamlaId + '`\n' +
-           '• <' + driveUrl + '|PDF megnyitása>' + sheetLink + '\n' +
+           '• <' + driveUrl + '|Számla PDF megnyitása>' + sheetLink + '\n' +
            '• Teendő: manuális adatbevitel vagy újrafeldolgozás';
     _sendToWebhook_(CONFIG.CHAT_WEBHOOK_ADMIN, text);
 
