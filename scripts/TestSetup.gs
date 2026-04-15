@@ -232,6 +232,76 @@ function repairAuditLogHeaders() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// F1-S1b TESZT SEGÉD — egyetlen email feldolgozása Message ID alapján
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Egyetlen emailt dolgoz fel Gmail Message ID alapján.
+ * Így a többi (éles) számla-email nem érintett a teszt alatt.
+ *
+ * Használat:
+ *   1. Küldd el a teszt PDF-et a szamlazas@armadillo.hu-ra
+ *   2. Futtasd checkInbox() → konzolban megjelenik a message ID: pl. [195abc3f...]
+ *   3. Másold be a message ID-t MSG_ID változóba lent
+ *   4. Futtasd ezt a függvényt: processInvoiceById
+ *
+ * Futtatás: Script Editor → processInvoiceById → ▶ Run
+ */
+function processInvoiceById() {
+  if (!CONFIG.TEST_MODE) {
+    throw new Error('processInvoiceById() csak TEST_MODE=true esetén futtatható!');
+  }
+
+  // ← Ide írd be a checkInbox() által megmutatott message ID-t
+  const MSG_ID = '';
+
+  if (!MSG_ID) {
+    throw new Error(
+      'MSG_ID üres!\n' +
+      '1. Futtasd checkInbox()-ot → konzolban látod: [195abc3f...] "Tárgy"\n' +
+      '2. Másold be a szögletes zárójelek közötti ID-t ide:\n' +
+      '   const MSG_ID = "195abc3f...";'
+    );
+  }
+
+  const message = GmailApp.getMessageById(MSG_ID);
+  if (!message) {
+    throw new Error('Üzenet nem található: ' + MSG_ID);
+  }
+
+  console.log('════════════════════════════════════════');
+  console.log('processInvoiceById: [' + MSG_ID + ']');
+  console.log('Tárgy: "' + message.getSubject() + '"');
+  console.log('Feladó: ' + message.getFrom());
+  console.log('Dátum: ' + message.getDate().toISOString());
+  console.log('════════════════════════════════════════');
+
+  // Deduplikáció-ellenőrzés (ha már benne van a W oszlopban — ne dolgozzuk fel kétszer)
+  const processedIds = _loadProcessedMessageIds_();
+  if (processedIds.has(MSG_ID)) {
+    console.log('ℹ️  Ez az üzenet már szerepel a BEJÖVŐ_SZÁMLÁK W oszlopában.');
+    console.log('   Duplikáció teszt: ✅ rendben — nem dolgozza fel újra.');
+    return;
+  }
+
+  // Feldolgozás — ugyanaz a pipeline mint processNewInvoices()-ban
+  const result = _processMessage_(message, processedIds);
+
+  if (result === 'OK') {
+    message.markRead();
+    console.log('✅ Feldolgozás sikeres! Ellenőrizd:');
+    console.log('   • Drive: Bejövő számlák TEST / 2026 / 04_Április /');
+    console.log('   • BEJÖVŐ_SZÁMLÁK: legújabb sor (N/O/P/Q/W kitöltve)');
+    console.log('   • SZÁMLA_TÉTELEK: tétel sorok (J/K/L/M kitöltve)');
+    console.log('   • Admin Chat: értesítő üzenet megérkezett');
+  } else if (result === 'NO_PDF') {
+    console.log('⚠️  Nincs PDF csatolmány az üzenetben. Ellenőrizd a feladott emailt.');
+  } else if (result === 'DRIVE_ERROR') {
+    console.log('❌ Drive mentési hiba. Email olvasatlan maradt (retry következő körben).');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CLEANUP (opcionális — csak ha el akarod távolítani a teszt környezetet)
 // ─────────────────────────────────────────────────────────────────────────────
 
