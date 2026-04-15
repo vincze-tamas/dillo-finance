@@ -35,13 +35,19 @@ function notifyNewInvoice(szamlaId, szallitoNev, osszeg, deviza, statusz, driveU
   const prefix  = CONFIG.TEST_MODE ? '[TEST] ' : '';
   const osszeFormatted = _formatAmount_(osszeg, deviza);
 
+  // SSOT sheet URL — mindig ugyanaz a spreadsheet, config-ból képzett link
+  const sheetUrl = CONFIG.SPREADSHEET_ID
+    ? 'https://docs.google.com/spreadsheets/d/' + CONFIG.SPREADSHEET_ID
+    : '';
+  const sheetLink = sheetUrl ? '\n• <' + sheetUrl + '|SSOT sheet megnyitása>' : '';
+
   let text;
   if (statusz === 'BEÉRKEZETT') {
     text = icon + ' *' + prefix + 'Új számla érkezett — jóváhagyásra vár*\n' +
            '• Szállító: *' + szallitoNev + '*\n' +
            '• Összeg: ' + osszeFormatted + '\n' +
            '• Azonosító: `' + szamlaId + '`\n' +
-           '• <' + driveUrl + '|PDF megnyitása>';
+           '• <' + driveUrl + '|PDF megnyitása>' + sheetLink;
     _sendToWebhook_(CONFIG.CHAT_WEBHOOK_OPS, text);
 
   } else if (statusz === 'HIÁNYOS_PO') {
@@ -50,14 +56,14 @@ function notifyNewInvoice(szamlaId, szallitoNev, osszeg, deviza, statusz, driveU
            '• Összeg: ' + osszeFormatted + '\n' +
            '• Azonosító: `' + szamlaId + '`\n' +
            '• Teendő: BEJÖVŐ_SZÁMLÁK fülön N oszlop ellenőrzése\n' +
-           '• <' + driveUrl + '|PDF megnyitása>';
+           '• <' + driveUrl + '|PDF megnyitása>' + sheetLink;
     _sendToWebhook_(CONFIG.CHAT_WEBHOOK_OPS, text);
 
   } else if (statusz === 'AI_HIBA') {
     text = icon + ' *' + prefix + 'OCR feldolgozás sikertelen*\n' +
            '• Szállító: ' + (szallitoNev || 'ismeretlen') + '\n' +
            '• Azonosító: `' + szamlaId + '`\n' +
-           '• <' + driveUrl + '|PDF megnyitása>\n' +
+           '• <' + driveUrl + '|PDF megnyitása>' + sheetLink + '\n' +
            '• Teendő: manuális adatbevitel vagy újrafeldolgozás';
     _sendToWebhook_(CONFIG.CHAT_WEBHOOK_ADMIN, text);
 
