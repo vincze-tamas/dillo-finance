@@ -6,8 +6,11 @@
  * TEST_MODE = true  → staging sheet + teszt mappák + minden chat/email → Admin webhook / autobot@
  * TEST_MODE = false → éles sheet + éles mappák + valódi webhookok
  *
- * FIGYELEM: Gemini API key-t NEM tároljuk itt — PropertiesService-ben van.
- * Beállítás: Script Editor → Project Settings → Script Properties → GEMINI_API_KEY
+ * FIGYELEM: Sem a Gemini API key, sem a Chat webhook URL-ek NEM kerülnek forráskódba.
+ * Mindkettő PropertiesService-ben van. Beállítás:
+ *   Script Editor → Project Settings → Script Properties
+ *   GEMINI_API_KEY   = "AIza..."
+ *   CHAT_WEBHOOK_TEST = "https://chat.googleapis.com/v1/spaces/..."  ← teszt space URL
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,13 +42,10 @@ const _IDS_ = {
 // CHAT WEBHOOK URL-EK
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Tesztkörnyezet webhook URL → PropertiesService (soha nem kerül forráskódba)
+// Beállítás: Script Editor → Project Settings → Script Properties → CHAT_WEBHOOK_TEST
+// Tesztmódban OPS + FINANCE + ADMIN mind erre az egy URL-re megy.
 const _WEBHOOKS_ = {
-  test: {
-    // Tesztüzemmódban minden értesítő az Admin webhook-ra megy
-    OPS:     'https://chat.googleapis.com/v1/spaces/AAQARsbhDE4/messages?key=REDACTED_KEY&token=REDACTED_TOKEN',
-    FINANCE: 'https://chat.googleapis.com/v1/spaces/AAQARsbhDE4/messages?key=REDACTED_KEY&token=REDACTED_TOKEN',
-    ADMIN:   'https://chat.googleapis.com/v1/spaces/AAQARsbhDE4/messages?key=REDACTED_KEY&token=REDACTED_TOKEN',
-  },
   prod: {
     OPS:     '', // ← 🟢 Pénzügy-Jóváhagyások space webhook (Ági + Márk)
     FINANCE: '', // ← 🏦 Pénzügy-Utalások space webhook (Péter)
@@ -99,6 +99,12 @@ const _EMAILS_ = {
 const CONFIG = (function () {
   const env = TEST_MODE ? 'test' : 'prod';
 
+  // Teszt webhook URL: PropertiesService-ből olvasva — soha nem kerül forráskódba.
+  // Tesztmódban OPS + FINANCE + ADMIN mind erre az URL-re megy (egy Admin Chat space).
+  const testWebhookUrl = TEST_MODE
+    ? (PropertiesService.getScriptProperties().getProperty('CHAT_WEBHOOK_TEST') || '')
+    : '';
+
   return {
     // ── Meta
     TEST_MODE: TEST_MODE,
@@ -110,10 +116,10 @@ const CONFIG = (function () {
     BATCHES_FOLDER_ID:  _IDS_[env].BATCHES_FOLDER_ID,
 
     // ── Chat webhooks
-    // Tesztmódban OPS és FINANCE az Admin webhook-ra van irányítva
-    CHAT_WEBHOOK_OPS:     TEST_MODE ? _WEBHOOKS_.test.ADMIN : _WEBHOOKS_.prod.OPS,
-    CHAT_WEBHOOK_FINANCE: TEST_MODE ? _WEBHOOKS_.test.ADMIN : _WEBHOOKS_.prod.FINANCE,
-    CHAT_WEBHOOK_ADMIN:   _WEBHOOKS_[env].ADMIN,
+    // Tesztmódban mind a három csatorna a CHAT_WEBHOOK_TEST PropertiesService URL-re megy.
+    CHAT_WEBHOOK_OPS:     TEST_MODE ? testWebhookUrl : _WEBHOOKS_.prod.OPS,
+    CHAT_WEBHOOK_FINANCE: TEST_MODE ? testWebhookUrl : _WEBHOOKS_.prod.FINANCE,
+    CHAT_WEBHOOK_ADMIN:   TEST_MODE ? testWebhookUrl : _WEBHOOKS_.prod.ADMIN,
 
     // ── Emailek
     ADMIN_EMAIL:   _EMAILS_[env].ADMIN,
@@ -266,9 +272,10 @@ function logConfig() {
   console.log('INVOICES_FOLDER_ID: ' + (CONFIG.INVOICES_FOLDER_ID || '⚠️  NINCS BEÁLLÍTVA'));
   console.log('REJECTED_FOLDER_ID: ' + (CONFIG.REJECTED_FOLDER_ID || '⚠️  NINCS BEÁLLÍTVA'));
   console.log('BATCHES_FOLDER_ID:  ' + (CONFIG.BATCHES_FOLDER_ID  || '⚠️  NINCS BEÁLLÍTVA'));
-  console.log('CHAT_WEBHOOK_OPS:   ' + (CONFIG.CHAT_WEBHOOK_OPS    || '⚠️  NINCS BEÁLLÍTVA'));
-  console.log('CHAT_WEBHOOK_FINANCE:' + (CONFIG.CHAT_WEBHOOK_FINANCE|| '⚠️  NINCS BEÁLLÍTVA'));
-  console.log('CHAT_WEBHOOK_ADMIN: ' + (CONFIG.CHAT_WEBHOOK_ADMIN  || '⚠️  NINCS BEÁLLÍTVA'));
+  // Webhook URL-eket NEM logoljuk ki (tartalmaz tokent) — csak meglét ellenőrzés
+  console.log('CHAT_WEBHOOK_OPS:   ' + (CONFIG.CHAT_WEBHOOK_OPS    ? '✓ beállítva' : '⚠️  NINCS BEÁLLÍTVA'));
+  console.log('CHAT_WEBHOOK_FINANCE:' + (CONFIG.CHAT_WEBHOOK_FINANCE? '✓ beállítva' : '⚠️  NINCS BEÁLLÍTVA'));
+  console.log('CHAT_WEBHOOK_ADMIN: ' + (CONFIG.CHAT_WEBHOOK_ADMIN  ? '✓ beállítva' : '⚠️  NINCS BEÁLLÍTVA'));
   console.log('ADMIN_EMAIL:        ' + CONFIG.ADMIN_EMAIL);
   console.log('PO_THRESHOLD:       ' + CONFIG.PO_CONFIDENCE_THRESHOLD + '%');
   console.log('PROJEKTSZAM_REGEX:  ' + CONFIG.PROJEKTSZAM_REGEX);

@@ -10,7 +10,8 @@
  * Publikus függvények:
  *   notifyNewInvoice(szamlaId, szallitoNev, osszeg, deviza, statusz, driveUrl)
  *   notifyStatusChange(szamlaId, szallitoNev, osszeg, deviza, regiStatusz, ujStatusz, jovahagyoNev, visszautasitasOka)
- *   notifyWednesdayDigest(pendingRows, utalasDate)
+ *   notifyOpsDigest(projektRows, hianyosRows, utalasDate)
+ *   notifyWednesdayDigest(pendingRows, utalasDate, allandoRows)
  *   notifyBatchReady(kotegId, szamlakSzama, osszeg, driveUrl)
  *   notifyAdmin() — Utils.gs-ben definiált, itt NEM duplikáljuk
  */
@@ -143,71 +144,192 @@ function notifyStatusChange(szamlaId, szallitoNev, osszeg, deviza,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SZERDA 9:00 DIGEST (Finance → Péter)
+// SZERDA 9:00 — OPS DIGEST (Ági + Márk)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Szerda reggel 9:00-kor a WednesdayWorkflow.gs hívja.
- * Összefoglalja a JÓVÁHAGYVA státuszú, még nem utalt számlákat.
- * Finance webhook → Péter látja.
+ * OPS webhook → Ági és Márk látja.
  *
- * @param {Array<{szamlaId, szallitoNev, osszeg, deviza, fizhatarido}>} pendingRows
+ * Tartalom:
+ *   1. BEÉRKEZETT + PROJEKT kategória → jóváhagyásra vár
+ *   2. HIÁNYOS_PO → kézi review, tétel-szintű bontással (sor | PO | Conf% | reasoning)
+ *
+ * @param {Array<{szamlaId, szallitoNev, osszeg, deviza, fizhatarido}>} projektRows
+ *   BEÉRKEZETT + PROJEKT kategóriájú számlák
+ * @param {Array<{szamlaId, szallitoNev, osszeg, deviza, fizhatarido, tetelek[]}>} hianyosRows
+ *   HIÁNYOS_PO számlák tétel-szintű bontással
  * @param {Date} utalasDate  - A következő banki munkanap (getNextWorkday())
  */
-function notifyWednesdayDigest(pendingRows, utalasDate) {
-  const prefix   = CONFIG.TEST_MODE ? '[TEST] ' : '';
-  const utalasStr= formatDate(utalasDate);
+function notifyOpsDigest(projektRows, hianyosRows, utalasDate) {
+  const prefix    = CONFIG.TEST_MODE ? '[TEST] ' : '';
+  const utalasStr = formatDate(utalasDate);
 
-  if (pendingRows.length === 0) {
-    const text = '📋 *' + prefix + 'Szerda digest — nincs utalandó számla*\n' +
-                 'Nincs JÓVÁHAGYVA státuszú számla a kötegben.';
+  if (projektRows.length === 0 && hianyosRows.length === 0) {
+    const text = '📋 *' + prefix + 'Szerda OPS digest — nincs teendő*\n' +
+                 'Nincs jóváhagyásra váró PROJEKT számla és nincs HIÁNYOS_PO tétel.';
+    _sendToWebhook_(CONFIG.CHAT_WEBHOOK_OPS, text);
+    return;
+  }
+
+  const todayMs     = new Date().setHours(0, 0, 0, 0);
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+
+  /**
+   * @param {string} fizhatarido  - 'YYYY-MM-DD' vagy ''
+   * @returns {string}  urgency marker vagy ''
+   */
+  function _urgency(fizhatarido) {
+    if (!fizhatarido) return '';
+    const hatMs = new Date(fizhatarido).setHours(0, 0, 0, 0);
+    if (hatMs < todayMs) return ' ⚠️ *LEJÁRT*';
+    if (hatMs - todayMs <= sevenDaysMs) return ' ⚠️ *<7 nap*';
+    return '';
+  }
+
+  const sections = [];
+
+  // ── 1. BEÉRKEZETT PROJEKT — jóváhagyásra vár
+  if (projektRows.length > 0) {
+    const lines = projektRows.map(function(r) {
+      return '  • ' + r.szallitoNev +
+             ' — ' + _formatAmount_(r.osszeg, r.deviza) +
+             ' (határidő: ' + (r.fizhatarido || '–') + ')' +
+             _urgency(r.fizhatarido);
+    }).join('\n');
+    sections.push('*📥 Jóváhagyásra vár — PROJEKT (' + projektRows.length + ' db):*\n' + lines);
+  }
+
+  // ── 2. HIÁNYOS_PO — kézi review, tétel-szintű bontással
+  if (hianyosRows.length > 0) {
+    const hianyosLines = hianyosRows.map(function(r) {
+      let header = '  ⚠️ *' + r.szallitoNev + '* — ' +
+                   _formatAmount_(r.osszeg, r.deviza) +
+                   ' (`' + r.szamlaId + '`)' +
+                   _urgency(r.fizhatarido);
+
+      if (r.tetelek && r.tetelek.length > 0) {
+        const tetelLines = r.tetelek.map(function(t) {
+          const conf = (t.poConfidence !== undefined && t.poConfidence !== '')
+            ? String(Math.round(Number(t.poConfidence))) + '%'
+            : '?';
+          const reasoning = t.poReasoning
+            ? ' | ' + String(t.poReasoning).substring(0, 60)
+            : '';
+          return '      sor ' + (t.tetelSzam || '?') +
+                 ': "' + String(t.leiras).substring(0, 40) + '"' +
+                 ' → PO: ' + t.po +
+                 ' | Conf: ' + conf +
+                 reasoning;
+        }).join('\n');
+        header += '\n' + tetelLines;
+      }
+      return header;
+    }).join('\n');
+
+    sections.push(
+      '*⚠️ HIÁNYOS_PO — kézi review (' + hianyosRows.length + ' db):*\n' +
+      hianyosLines + '\n' +
+      '_Teendő: PO kézzel → BEÉRKEZETT, vagy visszautasítás → VISSZAUTASÍTVA_'
+    );
+  }
+
+  const totalRows = projektRows.length + hianyosRows.length;
+  const text = '📋 *' + prefix + 'Szerda OPS digest — ' + totalRows + ' tétel*\n' +
+               '• Tervezett utalási nap: *' + utalasStr + '*\n\n' +
+               sections.join('\n\n');
+
+  _sendToWebhook_(CONFIG.CHAT_WEBHOOK_OPS, text);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SZERDA 9:00 — FINANCE DIGEST (Péter)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Szerda reggel 9:00-kor a WednesdayWorkflow.gs hívja.
+ * Finance webhook → Péter látja.
+ *
+ * Tartalom:
+ *   1. BEÉRKEZETT + ÁLLANDÓ kategória → jóváhagyásra vár
+ *   2. JÓVÁHAGYVA → utalásra vár (14:00-kor megy a kötegbe)
+ *
+ * @param {Array<{szamlaId, szallitoNev, osszeg, deviza, fizhatarido}>} pendingRows
+ *   JÓVÁHAGYVA státuszú számlák (14:00-kor batch-be kerülnek)
+ * @param {Date} utalasDate  - A következő banki munkanap (getNextWorkday())
+ * @param {Array<{szamlaId, szallitoNev, osszeg, deviza, fizhatarido}>} [allandoRows]
+ *   BEÉRKEZETT + ÁLLANDÓ kategóriájú számlák (opcionális, jóváhagyásra vár)
+ */
+function notifyWednesdayDigest(pendingRows, utalasDate, allandoRows) {
+  const prefix    = CONFIG.TEST_MODE ? '[TEST] ' : '';
+  const utalasStr = formatDate(utalasDate);
+  const allando   = allandoRows || [];
+
+  if (pendingRows.length === 0 && allando.length === 0) {
+    const text = '📋 *' + prefix + 'Szerda Finance digest — nincs teendő*\n' +
+                 'Nincs JÓVÁHAGYVA utalandó számla és nincs jóváhagyásra váró ÁLLANDÓ számla.';
     _sendToWebhook_(CONFIG.CHAT_WEBHOOK_FINANCE, text);
     return;
   }
 
-  // Összesítés devizánként
-  const totals = {};
-  pendingRows.forEach(function(r) {
-    const dev = r.deviza || 'HUF';
-    totals[dev] = (totals[dev] || 0) + (Number(r.osszeg) || 0);
-  });
-  const totalStr = Object.keys(totals).map(function(dev) {
-    return _formatAmount_(totals[dev], dev);
-  }).join(' + ');
-
-  // Tételsor lista (max 10 sor, utána "...és még X db")
-  const MAX_ROWS   = 10;
-  const displayRows= pendingRows.slice(0, MAX_ROWS);
-  const extraCount = pendingRows.length - displayRows.length;
-
-  const todayMs = new Date().setHours(0, 0, 0, 0);
+  const todayMs     = new Date().setHours(0, 0, 0, 0);
   const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
 
-  let itemLines = displayRows.map(function(r) {
-    let urgency = '';
-    if (r.fizhatarido) {
-      const hatMs = new Date(r.fizhatarido).setHours(0, 0, 0, 0);
-      if (hatMs < todayMs) {
-        urgency = ' ⚠️ *LEJÁRT*';
-      } else if (hatMs - todayMs <= sevenDaysMs) {
-        urgency = ' ⚠️ *<7 nap*';
-      }
-    }
-    return '  • ' + r.szallitoNev +
-           ' — ' + _formatAmount_(r.osszeg, r.deviza) +
-           ' (határidő: ' + (r.fizhatarido || '–') + ')' + urgency;
-  }).join('\n');
-
-  if (extraCount > 0) {
-    itemLines += '\n  _…és még ' + extraCount + ' számla_';
+  function _urgency(fizhatarido) {
+    if (!fizhatarido) return '';
+    const hatMs = new Date(fizhatarido).setHours(0, 0, 0, 0);
+    if (hatMs < todayMs) return ' ⚠️ *LEJÁRT*';
+    if (hatMs - todayMs <= sevenDaysMs) return ' ⚠️ *<7 nap*';
+    return '';
   }
 
-  const text = '📋 *' + prefix + 'Szerda digest — ' + pendingRows.length +
-               ' számla utalásra vár*\n' +
-               '• Tervezett utalási nap: *' + utalasStr + '*\n' +
-               '• Összesen: *' + totalStr + '*\n\n' +
-               '*Számlák:*\n' + itemLines + '\n\n' +
-               '_Köteg generálás: szerda 14:00-kor automatikusan._';
+  function _buildItemLines(rows) {
+    const MAX_ROWS    = 10;
+    const displayRows = rows.slice(0, MAX_ROWS);
+    const extraCount  = rows.length - displayRows.length;
+    let lines = displayRows.map(function(r) {
+      return '  • ' + r.szallitoNev +
+             ' — ' + _formatAmount_(r.osszeg, r.deviza) +
+             ' (határidő: ' + (r.fizhatarido || '–') + ')' +
+             _urgency(r.fizhatarido);
+    }).join('\n');
+    if (extraCount > 0) lines += '\n  _…és még ' + extraCount + ' számla_';
+    return lines;
+  }
+
+  const sections = [];
+
+  // ── 1. BEÉRKEZETT ÁLLANDÓ — jóváhagyásra vár
+  if (allando.length > 0) {
+    sections.push(
+      '*🏢 Jóváhagyásra vár — ÁLLANDÓ (' + allando.length + ' db):*\n' +
+      _buildItemLines(allando)
+    );
+  }
+
+  // ── 2. JÓVÁHAGYVA — utalásra vár (14:00-kor batch generálás)
+  if (pendingRows.length > 0) {
+    // Összesítés devizánként
+    const totals = {};
+    pendingRows.forEach(function(r) {
+      const dev = r.deviza || 'HUF';
+      totals[dev] = (totals[dev] || 0) + (Number(r.osszeg) || 0);
+    });
+    const totalStr = Object.keys(totals).map(function(dev) {
+      return _formatAmount_(totals[dev], dev);
+    }).join(' + ');
+
+    sections.push(
+      '*💸 Utalásra vár — ' + pendingRows.length + ' db (összesen: ' + totalStr + '):*\n' +
+      _buildItemLines(pendingRows)
+    );
+  }
+
+  const totalTetelCount = pendingRows.length + allando.length;
+  const text = '📋 *' + prefix + 'Szerda Finance digest — ' + totalTetelCount + ' tétel*\n' +
+               '• Tervezett utalási nap: *' + utalasStr + '*\n\n' +
+               sections.join('\n\n') + '\n\n' +
+               '_Köteg generálás: 14:00-kor automatikusan._';
 
   _sendToWebhook_(CONFIG.CHAT_WEBHOOK_FINANCE, text);
 }
@@ -369,12 +491,37 @@ function testAllNotifications() {
   );
   console.log('✓ VISSZAUTASÍTVA küldve');
 
-  notifyWednesdayDigest([
-    { szamlaId: 'INV-001', szallitoNev: 'Alpha Kft.',  osszeg: 127000, deviza: 'HUF', fizhatarido: '2026-04-15' },
-    { szamlaId: 'INV-002', szallitoNev: 'Beta Bt.',    osszeg: 85000,  deviza: 'HUF', fizhatarido: '2026-04-20' },
-    { szamlaId: 'INV-003', szallitoNev: 'Gamma Zrt.',  osszeg: 220000, deviza: 'HUF', fizhatarido: '2026-04-15' },
-  ], new Date(2026, 3, 15));
-  console.log('✓ Szerda digest küldve');
+  // OPS digest
+  notifyOpsDigest(
+    [
+      { szamlaId: 'INV-001', szallitoNev: 'Alpha Kft.',  osszeg: 127000, deviza: 'HUF', fizhatarido: '2026-04-15' },
+      { szamlaId: 'INV-002', szallitoNev: 'Beta Bt.',    osszeg: 85000,  deviza: 'HUF', fizhatarido: '2026-04-20' },
+    ],
+    [
+      {
+        szamlaId: 'INV-004', szallitoNev: 'Delta Kft.', osszeg: 50000, deviza: 'HUF', fizhatarido: '2026-04-15',
+        poSummary: 'HIÁNYOS',
+        tetelek: [
+          { tetelSzam: 1, leiras: 'Tervezési díj', po: '–',        poConfidence: 42, poReasoning: 'Nem azonosítható PO', poValidalt: 'NEM' },
+          { tetelSzam: 2, leiras: 'Anyagköltség',  po: 'IMME2601', poConfidence: 98, poReasoning: 'Egyértelmű egyezés',  poValidalt: 'IGEN' },
+        ],
+      },
+    ],
+    new Date(2026, 3, 15)
+  );
+  console.log('✓ OPS digest küldve');
+
+  // Finance digest
+  notifyWednesdayDigest(
+    [
+      { szamlaId: 'INV-003', szallitoNev: 'Gamma Zrt.', osszeg: 220000, deviza: 'HUF', fizhatarido: '2026-04-15' },
+    ],
+    new Date(2026, 3, 15),
+    [
+      { szamlaId: 'INV-005', szallitoNev: 'Bérleti Kft.', osszeg: 180000, deviza: 'HUF', fizhatarido: '2026-04-30' },
+    ]
+  );
+  console.log('✓ Finance digest küldve');
 
   notifyBatchReady(
     'KOTEG-20260408-XY12', 3, 432000,

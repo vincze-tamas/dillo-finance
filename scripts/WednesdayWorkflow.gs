@@ -13,6 +13,11 @@
  * CONFIG fül kulcsai (dupla futás megelőzéséhez):
  *   LAST_DIGEST_DATE  — utolsó digest futás dátuma (YYYY-MM-DD)
  *   LAST_BATCH_DATE   — utolsó batch generálás dátuma (YYYY-MM-DD)
+ *
+ * Betöltő függvények:
+ *   _loadPendingInvoices_()          — JÓVÁHAGYVA + nincs KOTEG_ID (batch + Finance digest)
+ *   _loadBeerkzetRows_(kategoria)    — BEÉRKEZETT + adott kategória (OPS/Finance digest)
+ *   _loadHianyosPORowsWithTetelek_() — HIÁNYOS_PO + SZÁMLA_TÉTELEK bontással (OPS digest)
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -54,13 +59,23 @@ function wednesdayMorningDigest() {
   }
   if (!claimed) return;
 
-  const pendingRows = _loadPendingInvoices_();
-  console.log('JÓVÁHAGYVA számlák száma: ' + pendingRows.length);
-
-  const utalasDate = getNextWorkday(today, 1);
+  const utalasDate    = getNextWorkday(today, 1);
   console.log('Tervezett utalási nap: ' + formatDate(utalasDate));
 
-  notifyWednesdayDigest(pendingRows, utalasDate);
+  // ── OPS digest (Ági + Márk): BEÉRKEZETT PROJEKT + HIÁNYOS_PO
+  const projektRows = _loadBeerkzetRows_(CONFIG.KATEGORIAK.PROJEKT);
+  const hianyosRows = _loadHianyosPORowsWithTetelek_();
+  console.log('BEÉRKEZETT PROJEKT: ' + projektRows.length +
+              ', HIÁNYOS_PO: ' + hianyosRows.length);
+  notifyOpsDigest(projektRows, hianyosRows, utalasDate);
+
+  // ── Finance digest (Péter): BEÉRKEZETT ÁLLANDÓ + JÓVÁHAGYVA
+  const allandoRows = _loadBeerkzetRows_(CONFIG.KATEGORIAK.ALLANDO);
+  const pendingRows = _loadPendingInvoices_();
+  console.log('BEÉRKEZETT ÁLLANDÓ: ' + allandoRows.length +
+              ', JÓVÁHAGYVA: ' + pendingRows.length);
+  notifyWednesdayDigest(pendingRows, utalasDate, allandoRows);
+
   console.log('✅ Digest elküldve. LAST_DIGEST_DATE → ' + formatDate(today));
 }
 
@@ -350,6 +365,120 @@ function _loadPendingInvoices_() {
   return pending;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// BEÉRKEZETT SZÁMLÁK BETÖLTÉSE (OPS + Finance digest)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * BEJÖVŐ_SZÁMLÁK fülről olvassa a BEÉRKEZETT + adott kategóriájú sorokat.
+ * OPS digest: CONFIG.KATEGORIAK.PROJEKT
+ * Finance digest: CONFIG.KATEGORIAK.ALLANDO
+ *
+ * @param {string} kategoria  - CONFIG.KATEGORIAK.PROJEKT | .ALLANDO | .MEGOSZTOTT
+ * @returns {Array<{szamlaId, szallitoNev, osszeg, deviza, fizhatarido, rowIndex}>}
+ */
+function _loadBeerkzetRows_(kategoria) {
+  const ss     = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  const bejovo = ss.getSheetByName(CONFIG.TABS.BEJOVO_SZAMLAK);
+  const c      = CONFIG.COLS.BEJOVO;
+
+  let data;
+  const lock = acquireLock();
+  try {
+    const lastRow = bejovo.getLastRow();
+    if (lastRow < 2) return [];
+    data = bejovo.getRange(2, 1, lastRow - 1, c.GMAIL_MESSAGE_ID).getValues();
+  } finally {
+    lock.releaseLock();
+  }
+
+  const result = [];
+  data.forEach(function(row, idx) {
+    if (String(row[c.STATUSZ   - 1] || '').trim() !== 'BEÉRKEZETT') return;
+    if (String(row[c.KATEGORIA - 1] || '').trim() !== kategoria)     return;
+    const fizHatarido = row[c.FIZHATARIDO - 1];
+    result.push({
+      szamlaId:    String(row[c.SZAMLA_ID    - 1] || ''),
+      szallitoNev: String(row[c.SZALLITO_NEV - 1] || ''),
+      osszeg:      Number(row[c.OSSZEG_BRUTTO- 1] || 0),
+      deviza:      String(row[c.DEVIZA        - 1] || 'HUF'),
+      fizhatarido: fizHatarido ? formatDate(new Date(fizHatarido)) : '',
+      kategoria:   kategoria,
+      rowIndex:    idx + 2,
+    });
+  });
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HIÁNYOS_PO SZÁMLÁK BETÖLTÉSE TÉTEL-SZINTŰ BONTÁSSAL (OPS digest)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * BEJÖVŐ_SZÁMLÁK fülről olvassa a HIÁNYOS_PO státuszú sorokat,
+ * és hozzájuk olvassa a SZÁMLA_TÉTELEK sorokat (PO | Conf | Reasoning).
+ * Az OPS digest tétel-szintű bontáshoz szükséges (spec §4.2 + Technikai Terv §31).
+ *
+ * @returns {Array<{szamlaId, szallitoNev, osszeg, deviza, fizhatarido, poSummary,
+ *                  tetelek: [{tetelSzam, leiras, po, poConfidence, poReasoning, poValidalt}]}>}
+ */
+function _loadHianyosPORowsWithTetelek_() {
+  const ss          = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  const bejovo      = ss.getSheetByName(CONFIG.TABS.BEJOVO_SZAMLAK);
+  const tetelSheet  = ss.getSheetByName(CONFIG.TABS.SZAMLA_TETELEK);
+  const c           = CONFIG.COLS.BEJOVO;
+  const ct          = CONFIG.COLS.TETEL;
+
+  let bejData, tetelData;
+  const lock = acquireLock();
+  try {
+    const lastBej = bejovo.getLastRow();
+    if (lastBej < 2) return [];
+    bejData = bejovo.getRange(2, 1, lastBej - 1, c.GMAIL_MESSAGE_ID).getValues();
+
+    const lastTetel = tetelSheet ? tetelSheet.getLastRow() : 1;
+    tetelData = (tetelSheet && lastTetel > 1)
+      ? tetelSheet.getRange(2, 1, lastTetel - 1, ct.PO_VALIDALT).getValues()
+      : [];
+  } finally {
+    lock.releaseLock();
+  }
+
+  // SZÁMLA_TÉTELEK indexelése számla ID szerint
+  const tetelMap = {};
+  tetelData.forEach(function(row) {
+    const szId = String(row[ct.SZAMLA_ID - 1] || '').trim();
+    if (!szId) return;
+    if (!tetelMap[szId]) tetelMap[szId] = [];
+    tetelMap[szId].push({
+      tetelSzam:    row[ct.TETEL_SZAM    - 1],
+      leiras:       String(row[ct.LEIRAS      - 1] || ''),
+      po:           String(row[ct.PO          - 1] || '–'),
+      poConfidence: row[ct.PO_CONFIDENCE  - 1],
+      poReasoning:  String(row[ct.PO_REASONING - 1] || ''),
+      poValidalt:   String(row[ct.PO_VALIDALT  - 1] || ''),
+    });
+  });
+
+  const result = [];
+  bejData.forEach(function(row, idx) {
+    if (String(row[c.STATUSZ - 1] || '').trim() !== 'HIÁNYOS_PO') return;
+    const szamlaId    = String(row[c.SZAMLA_ID   - 1] || '');
+    const fizHatarido = row[c.FIZHATARIDO - 1];
+    result.push({
+      szamlaId:    szamlaId,
+      szallitoNev: String(row[c.SZALLITO_NEV  - 1] || ''),
+      osszeg:      Number(row[c.OSSZEG_BRUTTO - 1] || 0),
+      deviza:      String(row[c.DEVIZA         - 1] || 'HUF'),
+      fizhatarido: fizHatarido ? formatDate(new Date(fizHatarido)) : '',
+      poSummary:   String(row[c.PO_SUMMARY    - 1] || ''),
+      tetelek:     tetelMap[szamlaId] || [],
+      rowIndex:    idx + 2,
+    });
+  });
+  return result;
+}
+
 /**
  * Adószám → bankszámlaszám keresőtábla a PARTNEREK fülről.
  * @param {Sheet} partnerSheet
@@ -384,11 +513,22 @@ function runDigestNow() {
       'Éles adatbázison való véletlen futás megelőzéséért.');
   }
   console.log('Digest manuális futtatás (ellenőrzések kihagyva)...');
-  const today       = new Date();
+  const today      = new Date();
+  const utalasDate = getNextWorkday(today, 1);
+  console.log('Utalási nap: ' + formatDate(utalasDate));
+
+  // OPS digest
+  const projektRows = _loadBeerkzetRows_(CONFIG.KATEGORIAK.PROJEKT);
+  const hianyosRows = _loadHianyosPORowsWithTetelek_();
+  console.log('BEÉRKEZETT PROJEKT: ' + projektRows.length + ', HIÁNYOS_PO: ' + hianyosRows.length);
+  notifyOpsDigest(projektRows, hianyosRows, utalasDate);
+
+  // Finance digest
+  const allandoRows = _loadBeerkzetRows_(CONFIG.KATEGORIAK.ALLANDO);
   const pendingRows = _loadPendingInvoices_();
-  const utalasDate  = getNextWorkday(today, 1);
-  console.log('Pending sorok: ' + pendingRows.length + ' | Utalási nap: ' + formatDate(utalasDate));
-  notifyWednesdayDigest(pendingRows, utalasDate);
+  console.log('BEÉRKEZETT ÁLLANDÓ: ' + allandoRows.length + ', JÓVÁHAGYVA: ' + pendingRows.length);
+  notifyWednesdayDigest(pendingRows, utalasDate, allandoRows);
+
   _writeConfigDate_('LAST_DIGEST_DATE', today);
   console.log('✅ Digest elküldve (manuális).');
 }
