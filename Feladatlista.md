@@ -31,9 +31,9 @@
 | 12 | Fázis 1 | Fejlesztő | Gemini OCR + SSOT Sheet írás | — |
 | 13 | Fázis 1 | Fejlesztő | Hibakezelés + trigger létrehozása | — |
 | 14 | Fázis 1 | Mindenki | Tesztszámla küldése + eredmény ellenőrzése | — |
-| 21 | Fázis 2 | Fejlesztő | HIÁNYOS_PO logika + ÁLLANDÓ bypass | — |
+| 21 | Fázis 2 | Fejlesztő | HIÁNYOS_PO logika + ÁLLANDÓ bypass | ✅ |
 | 22 | Fázis 2 | Operatív vezető | Visszautasító email sablon szövege | — |
-| 23 | Fázis 2 | Fejlesztő | onEdit trigger + fallback értesítő | — |
+| 23 | Fázis 2 | Fejlesztő | onEdit trigger + fallback értesítő | ✅ |
 | 24 | Fázis 2 | Ági + Fejlesztő | Visszautasítás teszt | — |
 | 31 | Fázis 3 | Fejlesztő | Szerda 9:00 digest trigger | P8 kell előtte |
 | 32 | Fázis 3 | Fejlesztő | getNextWorkday() + batch generátor | P8 kell előtte |
@@ -254,16 +254,17 @@ Előfeltétel: P1, P2 kész (Google Group + webhook URL-ek).
 
 ### Fejlesztő
 
-- [ ] **21 — HIÁNYOS_PO routing + ÁLLANDÓ bypass**
+- [x] **21 — HIÁNYOS_PO routing + ÁLLANDÓ bypass** ✅ *2026-04-16*
   Ha **bármely tétel** `PO_VALIDÁLT = NEM` (po_confidence < 95 VAGY po nem szerepel PROJEKTEK.A-ban) → státusz: `HIÁNYOS_PO`
   Ha minden tétel `PO_VALIDÁLT = IGEN` → státusz: `BEÉRKEZETT`
   Ha kategória `ÁLLANDÓ` → PO nem szükséges → `PO_SUMMARY = N/A` → direkt `BEÉRKEZETT` (PO ellenőrzés kihagyva)
   Ez a két ág nem cserélhető fel. Az ÁLLANDÓ számlák soha nem kerülnek HIÁNYOS_PO-ba.
 
-- [ ] **23 — onEdit trigger + fallback**
-  `onEdit` trigger figyeli a BEJÖVŐ_SZÁMLÁK Q oszlopát.
-  Ha az érték `VISSZAUTASÍTVA`-ra változik: visszautasító email küldése a Partner email-jére (PARTNEREK fülről) az Operatív vezető által megadott sablonból.
-  Ha Chat webhook hiba: `try-catch` → Gmail küldés fallbackként az ops és finance emailekre.
+- [x] **23 — onEdit trigger + visszautasítás email + PDF áthelyezés** ✅ *2026-04-16*
+  `_onBejovoszamlaStatuszChange_()` (Triggers.gs) figyeli a BEJÖVŐ_SZÁMLÁK Q oszlopát.
+  Ha az érték `VISSZAUTASÍTVA`-ra változik: visszautasító email küldése a Partner email-jére (PARTNEREK.E oszlop, adószám alapján keresve).
+  PDF áthelyezése a Visszautasított Drive mappába (`_movePdfToRejectedFolder_()`).
+  TEST_MODE: email és Chat → ADMIN_EMAIL / Admin webhook.
 
 ### Operatív vezető (Ági)
 
