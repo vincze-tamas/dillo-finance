@@ -273,12 +273,13 @@ function _writeConfigDate_(key, date) {
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][0]).trim() === key) {
         sheet.getRange(i + 1, 2).setValue(formatDate(date));
-        sheet.getRange(i + 1, 3).setValue('AUTO');
+        // Státusz oszlopot (C) NEM írjuk felül — LAST_DIGEST_DATE és LAST_BATCH_DATE
+        // nem ELLENŐRZENDŐ/VERIFIED típusú sorok, a dropdown validáció "AUTO"-t nem fogad el.
         return;
       }
     }
-    // Kulcs nem létezik → új sor
-    sheet.appendRow([key, formatDate(date), 'AUTO']);
+    // Kulcs nem létezik → új sor (státusz oszlop üresen marad)
+    sheet.appendRow([key, formatDate(date)]);
   } catch (e) {
     console.warn('_writeConfigDate_(' + key + ') hiba: ' + e.message);
   }
@@ -321,7 +322,19 @@ function _loadPendingInvoices_() {
     //   2. Állítsd a Q (STATUSZ) oszlopot visszautasítva → JÓVÁHAGYVA-ra
     //   3. A következő szerdai digest automatikusan felveszi a számlát
     if (String(row[c.KOTEG_ID - 1] || '').trim() !== '')            return;
-    const adoszam = String(row[c.ADOSZAM - 1] || '').trim();
+    const adoszam    = String(row[c.ADOSZAM - 1] || '').trim();
+    // KOZ-05: bankMap kulcsok csak számjegyeket tartalmaznak (_buildBankMap_ normalizálja).
+    // A BEJÖVŐ_SZÁMLÁK adószám mezőjében kötőjelek lehetnek (pl. "11111111-1-11") →
+    // ugyanúgy normalizálni kell a lookup előtt, különben a keresés mindig üres találatot ad.
+    const adoszamKey = adoszam.replace(/[^0-9]/g, '');
+
+    // Fizetési határidő: a Sheet Date cella String()-gel csúnya formátumot ad.
+    // formatDate() YYYY-MM-DD stringet ad — ezt használjuk.
+    const fizHatarido = row[c.FIZHATARIDO - 1];
+    const fizHataridoStr = fizHatarido
+      ? formatDate(new Date(fizHatarido))
+      : '';
+
     pending.push({
       szamlaId:    String(row[c.SZAMLA_ID     - 1] || ''),
       szallitoNev: String(row[c.SZALLITO_NEV  - 1] || ''),
@@ -329,8 +342,8 @@ function _loadPendingInvoices_() {
       szamlaszam:  String(row[c.SZAMLASZAM    - 1] || ''),
       osszeg:      Number(row[c.OSSZEG_BRUTTO - 1] || 0),
       deviza:      String(row[c.DEVIZA         - 1] || 'HUF'),
-      fizhatarido: String(row[c.FIZHATARIDO    - 1] || ''),
-      bankszamla:  bankMap[adoszam] || '',
+      fizhatarido: fizHataridoStr,
+      bankszamla:  bankMap[adoszamKey] || '',
       rowIndex:    idx + 2,
     });
   });
