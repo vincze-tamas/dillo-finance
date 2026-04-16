@@ -31,6 +31,20 @@ const MAGNET_TETEL_LEN = 249;
 const MAGNET_LAB_LEN   = 24;
 const MAGNET_CRLF      = '\r\n';
 
+/**
+ * Összeg konvertálása MagNet fájl-formátumba.
+ * CONFIG.BATCH_AMOUNT_UNIT alapján:
+ *   'HUF'    → egész forint (Math.round) — jelenlegi feltevés
+ *   'FILLER' → fillér (Math.round × 100) — ha MagNet fillért vár
+ * P11 (testP11OneFt()) validálja, melyik a helyes — Péter visszajelzése után Config.gs-ben állítandó.
+ * @param {number} forintAmount
+ * @returns {number}
+ */
+function _amountToMagnet_(forintAmount) {
+  const rounded = Math.round(forintAmount);
+  return CONFIG.BATCH_AMOUNT_UNIT === 'FILLER' ? rounded * 100 : rounded;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // FŐ BELÉPÉSI PONT
 // ─────────────────────────────────────────────────────────────────────────────
@@ -180,7 +194,7 @@ function _buildFejRecord_(sendingAccount, megbizoDate, utalasDate,
   rec += _pad_('K',                    1,  'L', ' ');  // [34]    Köteg típus (K=csoportos)
   rec += _pad_(kotegId.slice(-6),      6,  'R', '0');  // [35-40] Köteg sorszám
   rec += _pad_(String(itemCount),      6,  'R', '0');  // [41-46] Tételek száma
-  rec += _pad_(String(Math.round(totalAmount)), 15, 'R', '0'); // [47-61] Összeg — ⚠️ ELLENŐRZENDŐ: jelenlegi impl. FORINTBAN számolja (fillér nélkül). Ha MagNet FILLÉRT vár, megszorozni 100-zal!
+  rec += _pad_(String(_amountToMagnet_(totalAmount)), 15, 'R', '0'); // [47-61] Összeg — CONFIG.BATCH_AMOUNT_UNIT: 'HUF'=forint, 'FILLER'=×100. P11 validálja.
   rec += _pad_('',                     MAGNET_FEJ_LEN - rec.length, 'L', ' '); // kitöltés
 
   _assertLength_(rec, MAGNET_FEJ_LEN, 'FEJ');
@@ -195,7 +209,7 @@ function _buildTetelRecord_(row, sorszam) {
   const bankClean = row.bankszamla.replace(/[^0-9]/g, '');
   const nev       = asciiTranslit(row.szallitoNev).substring(0, 70);
   const kozlemeny = asciiTranslit(row.szamlaszam).substring(0, 35);
-  const osszeg    = Math.round(row.osszeg); // ⚠️ ELLENŐRZENDŐ: FORINTBAN (fillér nélkül). Ha MagNet FILLÉRT vár: row.osszeg * 100
+  const osszeg    = _amountToMagnet_(row.osszeg); // CONFIG.BATCH_AMOUNT_UNIT alapján: 'HUF'=forint, 'FILLER'=×100
 
   let rec = '';
   rec += _pad_('2',          1,  'L', ' ');  // [1]      Rekord típus
@@ -217,7 +231,7 @@ function _buildLabRecord_(itemCount, totalAmount) {
   let rec = '';
   rec += _pad_('9',                    1,  'L', ' ');  // [1]    Rekord típus
   rec += _pad_(String(itemCount),      6,  'R', '0');  // [2-7]  Tételek száma
-  rec += _pad_(String(Math.round(totalAmount)), 15, 'R', '0'); // [8-22] Összeg — ⚠️ ELLENŐRZENDŐ: forint vagy fillér (ld. FEJ rekord komment)
+  rec += _pad_(String(_amountToMagnet_(totalAmount)), 15, 'R', '0'); // [8-22] Összeg — CONFIG.BATCH_AMOUNT_UNIT alapján (ld. FEJ rekord)
   rec += _pad_('',                     MAGNET_LAB_LEN - rec.length, 'L', ' '); // kitöltés
 
   _assertLength_(rec, MAGNET_LAB_LEN, 'LÁB');
@@ -444,6 +458,94 @@ function testBatchFormat() {
   } catch (e) {
     console.error('✗ Formátum teszt HIBA: ' + e.message);
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P11 — 1 FT PRÓBAUTALÁS (IBM 852 / forint-fillér validáció)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * P11 teszt: 1 Ft-os próbautalás Armadillo saját számlájára.
+ * Célja: MagNet NetBank importja validálja a formátumot és az összeg egységet.
+ *
+ * ELŐFELTÉTEL:
+ *   CONFIG fülön: ARMADILLO_BANKSZAMLA sor beállítva (A=ARMADILLO_BANKSZAMLA, B=számlaszám)
+ *
+ * FUTTATÁS: Script Editor → testP11OneFt → ▶ Run
+ *
+ * ÉRTELMEZÉS:
+ *   Ha MagNet importálta hibátlanul → BATCH_AMOUNT_UNIT = 'HUF' helyes (Config.gs-ben marad)
+ *   Ha MagNet összeg hibát jelez    → Config.gs-ben: BATCH_AMOUNT_UNIT: 'FILLER'
+ *   Ha MagNet formátum hibát jelez  → melyik mező, hányadik pozíció? → fejlesztőnek visszajelzés
+ */
+function testP11OneFt() {
+  if (!CONFIG.TEST_MODE) {
+    throw new Error('testP11OneFt() csak TEST_MODE=true esetén! ' +
+      'Éles fájl generáláshoz kapcsold ki, de csak P11 jóváhagyás után!');
+  }
+
+  console.log('═══════════════════════════════════════════════');
+  console.log('P11 — 1 Ft próbautalás batch generálás');
+  console.log('BATCH_AMOUNT_UNIT: ' + CONFIG.BATCH_AMOUNT_UNIT);
+  console.log('═══════════════════════════════════════════════');
+
+  const sendingAccount = _getSendingAccount_();
+  console.log('Küldő számla (ARMADILLO_BANKSZAMLA): ' + sendingAccount);
+
+  // Célszámla = saját számla (belső utalás = nulla kockázat, az 1 Ft visszaérkezik)
+  const testRow = {
+    szamlaId:    'P11-TEST-1FT',
+    szallitoNev: 'Armadillo Design Kft PROBA',  // ASCII: max 35 char, kötőjel nélkül
+    adoszam:     '',
+    szamlaszam:  'P11-1FT-PROBA',
+    osszeg:      1,
+    deviza:      'HUF',
+    fizhatarido: '',
+    bankszamla:  sendingAccount, // saját számlára utal — az 1 Ft visszajön
+    rowIndex:    0,
+  };
+
+  const utalasDate = getNextWorkday(new Date(), 1);
+  const kotegId    = 'P11-' + formatDate(new Date()).replace(/-/g, '');
+
+  const content = _buildMagnetContent_([testRow], utalasDate, sendingAccount, kotegId);
+
+  // Fájl tartalom kiírása — Péter / fejlesztő ellenőrizheti
+  const lines = content.split(MAGNET_CRLF).filter(function(l) { return l.length > 0; });
+  console.log('');
+  console.log('═══ FÁJL TARTALOM (' + lines.length + ' sor) ═══');
+  lines.forEach(function(line, i) {
+    const label = i === 0 ? 'FEJ ' : (i === lines.length - 1 ? 'LÁB ' : 'TÉTL');
+    console.log(label + ' [' + line.length + ' kar]: ' + line);
+  });
+  console.log('');
+
+  // Az összeg, ahogy a fájlban szerepel — ez az ellenőrzés lényege
+  const amountInFile = _amountToMagnet_(1);
+  console.log('ÖSSZEG A FÁJLBAN: ' + amountInFile +
+    (CONFIG.BATCH_AMOUNT_UNIT === 'FILLER' ? ' (fillér = 1 Ft × 100)' : ' (forint)'));
+
+  // Drive mentés
+  let driveUrl;
+  try {
+    const saved = _saveBatchToDrive_(content, kotegId, utalasDate);
+    driveUrl = saved.fileUrl;
+  } catch (e) {
+    console.error('Drive mentés hiba: ' + e.message);
+    console.log('Fájl tartalom (manuális másoláshoz):\n' + content);
+    return;
+  }
+
+  console.log('');
+  console.log('Drive URL: ' + driveUrl);
+  console.log('');
+  console.log('═══ TEENDŐK (Péter) ═══');
+  console.log('1. Töltsd le a fájlt a Drive-ról: ' + driveUrl);
+  console.log('2. MagNet Business → Csoportos átutalás → Köteg feltöltés → fájl kiválasztása');
+  console.log('3a. Ha MagNet importálta: BATCH_AMOUNT_UNIT = "HUF" helyes → P11 KÉSZ');
+  console.log('3b. Ha összeg hibát jelez: Config.gs → BATCH_AMOUNT_UNIT: "FILLER" → újra teszt');
+  console.log('3c. Ha formátum hibát jelez: melyik mező, hányadik sor → fejlesztőnek visszajelzés');
+  console.log('4. Eredmény visszajelzés → P9 jogcím kód (F217/K01) is szükséges a közleményhez!');
 }
 
 /**

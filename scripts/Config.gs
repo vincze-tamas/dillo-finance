@@ -129,6 +129,12 @@ const CONFIG = (function () {
     // ── Üzleti logika
     PO_CONFIDENCE_THRESHOLD: 95, // % alatti → HIÁNYOS_PO
 
+    // ── MagNet batch összeg egység
+    // 'HUF'    = egész forint (Math.round) — jelenlegi feltevés
+    // 'FILLER' = fillér (Math.round × 100) — ha MagNet ezt várja
+    // P11 (1 Ft próbautalás, testP11OneFt()) dönti el. Péter visszajelzése után módosítandó.
+    BATCH_AMOUNT_UNIT: 'HUF',
+
     // ── Validáció
     // 3–4 nagybetű + 4 szám (pl. FCA2601, IMME2601)
     PROJEKTSZAM_REGEX: /^[A-Z]{3,4}[0-9]{4}$/,
