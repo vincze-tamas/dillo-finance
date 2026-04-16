@@ -509,15 +509,15 @@ function _sendRejectionEmailToPartner_(adoszam, szallitoNev, szamlaszam, visszau
 
   const subject = '[Armadillo] Számla visszautasítva — ' + szamlaszam;
   const body =
-    'Tisztelt ' + (szallitoNev || 'Partnerünk') + '!\n\n' +
+    'Tisztelt Partnerünk!\n\n' +
     'A(z) ' + szamlaszam + ' számú számlájának befogadását visszautasítottuk.\n' +
     (visszautasitasOka
       ? '\nVisszautasítás oka:\n' + visszautasitasOka + '\n'
       : '') +
     '\nKérjük, javított számlát küldjön, vagy vegye fel velünk a kapcsolatot.\n\n' +
     'Üdvözlettel,\n' +
-    'Armadillo Kft.\n' +
-    'penzugy@armadillo.hu';
+    'Armadillo Design Kft.\n' +
+    'szamlazas@armadillo.hu';
 
   GmailApp.sendEmail(toEmail, subject, body);
   console.log('✅ Visszautasítás email elküldve → ' + toEmail +
