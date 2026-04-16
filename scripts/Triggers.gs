@@ -13,6 +13,7 @@
  *   processNewInvoices     — 15 percenként (GmailDrive.gs)
  *   wednesdayMorningDigest — Minden nap 09:00 (WednesdayWorkflow.gs)
  *   wednesdayAfternoonBatch— Minden nap 14:00 (WednesdayWorkflow.gs)
+ *   checkOverdueKotegek    — Minden nap 10:00 (+3 napos ellenőrző, WednesdayWorkflow.gs)
  *   monthlyFirstOfMonth    — Minden hónap 1-jén 09:00 (éves teendők)
  */
 
@@ -25,6 +26,7 @@ const TRIGGER_FUNCTIONS = {
   GMAIL_POLLER:     'processNewInvoices',
   MORNING_DIGEST:   'wednesdayMorningDigest',
   AFTERNOON_BATCH:  'wednesdayAfternoonBatch',
+  OVERDUE_CHECK:    'checkOverdueKotegek',
   MONTHLY:          'monthlyFirstOfMonth',
 };
 
@@ -54,6 +56,7 @@ function setupAllTriggers() {
   _ensureTimeTrigger_(existing, TRIGGER_FUNCTIONS.GMAIL_POLLER,    'everyMinutes', 15);
   _ensureTimeTrigger_(existing, TRIGGER_FUNCTIONS.MORNING_DIGEST,  'everyDays',    1,  9);
   _ensureTimeTrigger_(existing, TRIGGER_FUNCTIONS.AFTERNOON_BATCH, 'everyDays',    1,  14);
+  _ensureTimeTrigger_(existing, TRIGGER_FUNCTIONS.OVERDUE_CHECK,   'everyDays',    1,  10);
   _ensureTimeTrigger_(existing, TRIGGER_FUNCTIONS.MONTHLY,         'onMonthDay',   1,  9);
 
   console.log('════════════════════════════════════════');

@@ -441,6 +441,133 @@ function listPendingInvoices() {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// +3 NAPOS ELLENŐRZŐ TRIGGER
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Naponta fut (Triggers.gs állítja be — wednesdayMorningDigest-tel azonos time trigger).
+ * Megkeresi a JÓVÁHAGYVA státuszú, KOTEG_ID-vel rendelkező számlákat, ahol az utalás
+ * dátuma (KÖTEGEK fülön) több mint 3 napja lejárt, de a státusz még nem UTALVA.
+ *
+ * Ha talál ilyent → Chat figyelmeztetés Finance webhook-ra (Péternek).
+ *
+ * Logika:
+ *   "kötegelt" = JÓVÁHAGYVA státuszú + KOTEG_ID nem üres
+ *   "késedelmes" = a KOTEG_ID-hez tartozó KÖTEGEK sor utalás dátuma > 3 napja múlt el
+ *   "nem teljesített" = a Q oszlop még nem UTALVA
+ *
+ * NE nevezd át — Triggers.gs erre a névre hivatkozik.
+ */
+function checkOverdueKotegek() {
+  const today   = new Date();
+  today.setHours(0, 0, 0, 0);
+  const limit3  = new Date(today.getTime() - 3 * 24 * 60 * 60 * 1000); // 3 nappal ezelőtt
+
+  console.log('checkOverdueKotegek: ' + formatDate(today));
+
+  try {
+    const ss       = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    const bejovo   = ss.getSheetByName(CONFIG.TABS.BEJOVO_SZAMLAK);
+    const kotegek  = ss.getSheetByName(CONFIG.TABS.KOTEGEK);
+    const c        = CONFIG.COLS.BEJOVO;
+
+    if (!bejovo || !kotegek) {
+      console.warn('checkOverdueKotegek: BEJÖVŐ_SZÁMLÁK vagy KÖTEGEK fül nem található.');
+      return;
+    }
+
+    // KÖTEGEK fülből utalás dátum keresőtábla: kotegId → utalas dátum
+    // KÖTEGEK oszlopok: A=KötegID, B=GenerálásDátum, C=UtalásDátum, D=Összeg, E=DriveURL
+    const kotegData   = kotegek.getLastRow() > 1
+      ? kotegek.getRange(2, 1, kotegek.getLastRow() - 1, 3).getValues()
+      : [];
+    const utalasMap = {};
+    kotegData.forEach(function(row) {
+      const kid  = String(row[0] || '').trim();
+      const udat = row[2]; // C oszlop — utalás dátuma
+      if (kid && udat) utalasMap[kid] = new Date(udat);
+    });
+
+    // BEJÖVŐ_SZÁMLÁK végigpásztázás
+    const lastRow = bejovo.getLastRow();
+    if (lastRow < 2) return;
+    const data = bejovo.getRange(2, 1, lastRow - 1, c.GMAIL_MESSAGE_ID).getValues();
+
+    const overdue = [];
+    data.forEach(function(row) {
+      const statusz  = String(row[c.STATUSZ  - 1] || '').trim();
+      const kotegId  = String(row[c.KOTEG_ID - 1] || '').trim();
+
+      // Csak JÓVÁHAGYVA + KOTEG_ID megvan + még nem UTALVA
+      if (statusz !== 'JÓVÁHAGYVA' || !kotegId) return;
+
+      // Utalás dátuma ellenőrzés
+      const utalasDate = utalasMap[kotegId];
+      if (!utalasDate) return; // KÖTEGEK fülön nincs bejegyzés — kihagyja
+
+      utalasDate.setHours(0, 0, 0, 0);
+      if (utalasDate > limit3) return; // nem késedelmes még
+
+      overdue.push({
+        szamlaId:    String(row[c.SZAMLA_ID    - 1] || ''),
+        szallitoNev: String(row[c.SZALLITO_NEV - 1] || ''),
+        osszeg:      Number(row[c.OSSZEG_BRUTTO- 1] || 0),
+        deviza:      String(row[c.DEVIZA        - 1] || 'HUF'),
+        kotegId:     kotegId,
+        utalasDate:  formatDate(utalasDate),
+        napjaKesik:  Math.floor((today - utalasDate) / (24 * 60 * 60 * 1000)),
+      });
+    });
+
+    if (overdue.length === 0) {
+      console.log('Nincs késedelmes utalás.');
+      return;
+    }
+
+    console.log('⚠️  ' + overdue.length + ' késedelmes utalás találva.');
+
+    // Chat figyelmeztetés — Finance webhook (Péter)
+    const prefix = CONFIG.TEST_MODE ? '[TEST] ' : '';
+    const lines  = overdue.map(function(r) {
+      return '  • ' + r.szallitoNev +
+             ' — ' + r.osszeg.toLocaleString() + ' ' + r.deviza +
+             ' | Köteg: `' + r.kotegId + '`' +
+             ' | Utalás: ' + r.utalasDate +
+             ' | *' + r.napjaKesik + ' napja késedelmes*';
+    }).join('\n');
+
+    const text = '⚠️ *' + prefix + 'Késedelmes utalás — azonnali intézkedés szükséges*\n' +
+                 overdue.length + ' számla nem lett UTALVA a tervezett napon:\n\n' +
+                 lines + '\n\n' +
+                 '*Teendő:* MagNet → ellenőrizd az utalást, majd a sheet Q oszlopát → UTALVA';
+
+    _sendToWebhook_(CONFIG.CHAT_WEBHOOK_FINANCE, text);
+    console.log('✅ Figyelmeztetés elküldve (' + overdue.length + ' tétel).');
+
+  } catch (e) {
+    console.error('checkOverdueKotegek hiba: ' + e.message);
+    notifyAdmin('checkOverdueKotegek hiba', e.message, e);
+  }
+}
+
+/**
+ * Direkt teszt: checkOverdueKotegek() manuális futtatása — TEST_MODE-ban.
+ * A teszt egy JÓVÁHAGYVA + KOTEG_ID sorhoz kell, ahol a KÖTEGEK fülön az utalás dátuma
+ * 4+ napja múlt el. Legegyszerűbb: a runBatchNow() után a KÖTEGEK sor utalás dátumát
+ * kézzel módosítani 4 nappal korábbra, majd ezt futtatni.
+ * Futtatás: Script Editor → testCheckOverdue → ▶ Run
+ */
+function testCheckOverdue() {
+  if (!CONFIG.TEST_MODE) throw new Error('testCheckOverdue() csak TEST_MODE=true esetén!');
+  console.log('checkOverdueKotegek() manuális futtatás...');
+  checkOverdueKotegek();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DIGEST NAP LOGIKA TESZT
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Digest nap logika tesztelése különböző dátumokra — sheet hozzáférés nélkül.
  * Futtatás: Script Editor → testDigestDayLogic → ▶ Run
