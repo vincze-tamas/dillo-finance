@@ -415,18 +415,16 @@ createApp({
         getTasksByGroup(group) { return this.currentPhaseTasks.filter(t=>t.group===group); },
         getOwnerClass(owner) { return OWNER_CLASSES[owner]||'bg-slate-100 text-slate-600 border-slate-200'; },
         toggleTask(task) { task.timestamp=task.done?new Date().toLocaleString('hu-HU'):null; this.saveData(); },
-        saveData() { localStorage.setItem('armadilloTrackerV8',JSON.stringify(this.tasks)); },
+        saveData() { localStorage.setItem('armadilloTrackerV11',JSON.stringify(this.tasks)); },
         loadData() {
-            // V8: friss adat
-            const s8=localStorage.getItem('armadilloTrackerV8');
-            if(s8){ this.tasks=JSON.parse(s8); return; }
-            // Migráció V4/V5/V6/V7→V8: pipák megmaradnak, title+testDesc az új initialTasks-ból jön
-            // (új feladatok done=false-szal kerülnek be, meglévők megőrzik állapotukat)
-            const s7=localStorage.getItem('armadilloTrackerV7');
-            const s6=localStorage.getItem('armadilloTrackerV6');
-            const s5=localStorage.getItem('armadilloTrackerV5');
-            const s4=localStorage.getItem('armadilloTrackerV4');
-            const sOld = s7 || s6 || s5 || s4;
+            // V11: friss adat
+            const s11=localStorage.getItem('armadilloTrackerV11');
+            if(s11){ this.tasks=JSON.parse(s11); return; }
+            // Migráció bármely régi verzióból (V4–V10) — a legjobb/legújabb adatot veszi
+            const keys=['armadilloTrackerV10','armadilloTrackerV9','armadilloTrackerV8',
+                        'armadilloTrackerV7','armadilloTrackerV6','armadilloTrackerV5','armadilloTrackerV4'];
+            let sOld=null;
+            for(const k of keys){ sOld=localStorage.getItem(k); if(sOld) break; }
             if(sOld){
                 const old=JSON.parse(sOld);
                 const oldMap={};
@@ -435,10 +433,7 @@ createApp({
                     if(oldMap[t.id]){ t.done=oldMap[t.id].done; t.timestamp=oldMap[t.id].timestamp; }
                     return t;
                 });
-                localStorage.removeItem('armadilloTrackerV4');
-                localStorage.removeItem('armadilloTrackerV5');
-                localStorage.removeItem('armadilloTrackerV6');
-                localStorage.removeItem('armadilloTrackerV7');
+                keys.forEach(k=>localStorage.removeItem(k));
                 this.saveData();
                 return;
             }
@@ -446,11 +441,9 @@ createApp({
         },
         resetData() {
             if(confirm('Biztosan törlöd az összes pipát?')){
-                localStorage.removeItem('armadilloTrackerV4');
-                localStorage.removeItem('armadilloTrackerV5');
-                localStorage.removeItem('armadilloTrackerV6');
-                localStorage.removeItem('armadilloTrackerV7');
-                localStorage.removeItem('armadilloTrackerV8');
+                ['armadilloTrackerV4','armadilloTrackerV5','armadilloTrackerV6','armadilloTrackerV7',
+                 'armadilloTrackerV8','armadilloTrackerV9','armadilloTrackerV10','armadilloTrackerV11']
+                .forEach(k=>localStorage.removeItem(k));
                 this.tasks=JSON.parse(JSON.stringify(initialTasks));
                 this.saveData();
             }
