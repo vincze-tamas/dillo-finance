@@ -304,7 +304,7 @@ T('Task 23','Fázis 2','Visszautasító email sablon (Ági)',
   'Fejlesztő',false,true,false,false,true,'2026. 04. 16.'),
 T('Task 24','Fázis 2','Visszautasítás teszt (Ági + Fejlesztő)',
   'Visszautasítás end-to-end teszt: HIÁNYOS_PO státuszú staging sor P oszlopa kézzel VISSZAUTASÍTVA-ra állítva',
-  'Ági + Fejlesztő',false,false,true,false,false,null,
+  'Ági + Fejlesztő',false,false,true,false,true,'2026. 04. 16.',
   '✓ Email megérkezett a partner email-jére (tesztnél saját email is megfelel)<br>✓ Sablon szöveg helyes, {SZÁLLÍTÓ_NEVE} és {SZÁMLA_SZÁMA} be van helyettesítve<br>✓ Partner email a PARTNEREK fülről jön (E oszlop) — nem hardcode-olt<br>✓ AI_HIBA szimuláció (Gemini key szimuláltan rossz): AI_HIBA státusz megjelent, admin email megérkezett autobot@-ra<br>✓ Chat webhook szimuláltan hibás: Gmail fallback aktiválódott, autobot@-ra megérkezett'),
 
 // ── FÁZIS 3 ───────────────────────────────────────────────────────────────────
@@ -415,20 +415,21 @@ createApp({
         getTasksByGroup(group) { return this.currentPhaseTasks.filter(t=>t.group===group); },
         getOwnerClass(owner) { return OWNER_CLASSES[owner]||'bg-slate-100 text-slate-600 border-slate-200'; },
         toggleTask(task) { task.timestamp=task.done?new Date().toLocaleString('hu-HU'):null; this.saveData(); },
-        saveData() { localStorage.setItem('armadilloTrackerV9',JSON.stringify(this.tasks)); },
+        saveData() { localStorage.setItem('armadilloTrackerV10',JSON.stringify(this.tasks)); },
         loadData() {
-            // V9: friss adat
-            const s9=localStorage.getItem('armadilloTrackerV9');
-            if(s9){ this.tasks=JSON.parse(s9); return; }
-            // Migráció V4/V5/V6/V7/V8→V9: pipák megmaradnak, title+testDesc az új initialTasks-ból jön.
+            // V10: friss adat
+            const s10=localStorage.getItem('armadilloTrackerV10');
+            if(s10){ this.tasks=JSON.parse(s10); return; }
+            // Migráció V4–V9→V10: pipák megmaradnak, title+testDesc az új initialTasks-ból jön.
             // FONTOS: ha initialTasks-ban done=true (fejlesztő zárta le), azt MEGTARTJUK — a régi
             // false érték nem írhatja felül a kódban rögzített készállapotot.
+            const s9=localStorage.getItem('armadilloTrackerV9');
             const s8=localStorage.getItem('armadilloTrackerV8');
             const s7=localStorage.getItem('armadilloTrackerV7');
             const s6=localStorage.getItem('armadilloTrackerV6');
             const s5=localStorage.getItem('armadilloTrackerV5');
             const s4=localStorage.getItem('armadilloTrackerV4');
-            const sOld = s8 || s7 || s6 || s5 || s4;
+            const sOld = s9 || s8 || s7 || s6 || s5 || s4;
             if(sOld){
                 const old=JSON.parse(sOld);
                 const oldMap={};
@@ -450,6 +451,7 @@ createApp({
                 localStorage.removeItem('armadilloTrackerV6');
                 localStorage.removeItem('armadilloTrackerV7');
                 localStorage.removeItem('armadilloTrackerV8');
+                localStorage.removeItem('armadilloTrackerV9');
                 this.saveData();
                 return;
             }
@@ -463,6 +465,7 @@ createApp({
                 localStorage.removeItem('armadilloTrackerV7');
                 localStorage.removeItem('armadilloTrackerV8');
                 localStorage.removeItem('armadilloTrackerV9');
+                localStorage.removeItem('armadilloTrackerV10');
                 this.tasks=JSON.parse(JSON.stringify(initialTasks));
                 this.saveData();
             }

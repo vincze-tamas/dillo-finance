@@ -115,7 +115,7 @@ Fázis 2 csak akkor zárható, ha **mind a 4 task** kész:
 | 21 — HIÁNYOS_PO routing + ÁLLANDÓ bypass | Fejlesztő | ✅ 2026-04-16 |
 | 22 — Visszautasító email sablon | Ági | ☐ |
 | 23 — onEdit trigger + Chat fallback | Fejlesztő | ✅ 2026-04-16 |
-| 24 — Visszautasítás teszt | Ági + Fejlesztő | ☐ |
+| 24 — Visszautasítás teszt | Ági + Fejlesztő | ✅ 2026-04-16 |
 
 **Ellenőrzés:**
 

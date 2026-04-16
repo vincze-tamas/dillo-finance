@@ -34,7 +34,7 @@
 | 21 | Fázis 2 | Fejlesztő | HIÁNYOS_PO logika + ÁLLANDÓ bypass | ✅ |
 | 22 | Fázis 2 | Operatív vezető | Visszautasító email sablon szövege | — |
 | 23 | Fázis 2 | Fejlesztő | onEdit trigger + fallback értesítő | ✅ |
-| 24 | Fázis 2 | Ági + Fejlesztő | Visszautasítás teszt | — |
+| 24 | Fázis 2 | Ági + Fejlesztő | Visszautasítás teszt | ✅ |
 | 31 | Fázis 3 | Fejlesztő | Szerda 9:00 digest trigger | P8 kell előtte |
 | 32 | Fázis 3 | Fejlesztő | getNextWorkday() + batch generátor | P8 kell előtte |
 | 33 | Fázis 3 | Pénzügyi vezető | MagNet NetBank teszt import | — |
@@ -275,7 +275,7 @@ Előfeltétel: P1, P2 kész (Google Group + webhook URL-ek).
 
 ### Ági + Fejlesztő
 
-- [ ] **24 — Visszautasítás teszt**
+- [x] **24 — Visszautasítás teszt** ✅ *2026-04-16*
   Egy HIÁNYOS_PO státuszú tételt manuálisan átállítani VISSZAUTASÍTVA-ra a Sheet Q oszlopában.
   Ellenőrizni: megérkezett-e az email a szállítónak? Helyes sablon? Helyes partner email?
 
