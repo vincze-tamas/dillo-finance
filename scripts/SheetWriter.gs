@@ -159,8 +159,8 @@ function _buildErrorRow_(szamlaId, metadata, statuszKod, errorMessage) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Minden tételhez 1 sort appendRow-val ír a SZÁMLA_TÉTELEK fülre.
- * PO_VALIDÁLT (M) kiszámítása itt történik — Validation.gs-sel konzisztensen.
+ * Összes tételsort egyetlen setValues() hívással írja a SZÁMLA_TÉTELEK fülre.
+ * I4: appendRow() loop → batch write — kevesebb API kvóta, rövidebb lock idő.
  *
  * @param {Spreadsheet} ss
  * @param {string}      szamlaId
@@ -168,33 +168,38 @@ function _buildErrorRow_(szamlaId, metadata, statuszKod, errorMessage) {
  * @param {string}      kategoria
  */
 function _writeSzamlaTetelek_(ss, szamlaId, tetelek, kategoria) {
+  if (!tetelek || tetelek.length === 0) return;
+
   const sheet = ss.getSheetByName(CONFIG.TABS.SZAMLA_TETELEK);
   const c     = CONFIG.COLS.TETEL;
 
-  // Érvényes projektek cache — ne olvassuk újra tételenként (Utils.gs megosztott cache)
+  // Érvényes projektek cache — ne olvassuk újra tételenként
   const validProjects = loadValidProjects();
 
-  tetelek.forEach(function(tetel, idx) {
+  // 2D tömb összeállítása — egyetlen setValues() hívás
+  const allRows = tetelek.map(function(tetel, idx) {
     const poValidalt = _computePoValidalt_(tetel, kategoria, validProjects);
-
     const row = new Array(c.PO_VALIDALT).fill('');
 
     row[c.SZAMLA_ID      - 1] = szamlaId;
     row[c.TETEL_SZAM     - 1] = idx + 1;
-    row[c.LEIRAS         - 1] = tetel.leiras       || '';
-    row[c.MENNYISEG      - 1] = tetel.mennyiseg     || 1;
-    row[c.EGYSEGAR       - 1] = tetel.egysegar       || 0;
-    row[c.NETTO          - 1] = tetel.netto          || 0;
+    row[c.LEIRAS         - 1] = tetel.leiras        || '';
+    row[c.MENNYISEG      - 1] = tetel.mennyiseg      || 1;
+    row[c.EGYSEGAR       - 1] = tetel.egysegar        || 0;
+    row[c.NETTO          - 1] = tetel.netto           || 0;
     row[c.AFA_SZAZALEK   - 1] = tetel.afa_szazalek   !== undefined ? tetel.afa_szazalek : 27;
-    row[c.AFA_OSSZEG     - 1] = tetel.afa_osszeg     || 0;
-    row[c.BRUTTO         - 1] = tetel.brutto         || 0;
-    row[c.PO             - 1] = tetel.po             || '';
-    row[c.PO_CONFIDENCE  - 1] = tetel.po_confidence  || 0;
-    row[c.PO_REASONING   - 1] = tetel.po_reasoning   || '';
+    row[c.AFA_OSSZEG     - 1] = tetel.afa_osszeg      || 0;
+    row[c.BRUTTO         - 1] = tetel.brutto          || 0;
+    row[c.PO             - 1] = tetel.po              || '';
+    row[c.PO_CONFIDENCE  - 1] = tetel.po_confidence   || 0;
+    row[c.PO_REASONING   - 1] = tetel.po_reasoning    || '';
     row[c.PO_VALIDALT    - 1] = poValidalt;
 
-    sheet.appendRow(row);
+    return row;
   });
+
+  const firstNewRow = sheet.getLastRow() + 1;
+  sheet.getRange(firstNewRow, 1, allRows.length, c.PO_VALIDALT).setValues(allRows);
 }
 
 /**

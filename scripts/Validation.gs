@@ -257,23 +257,26 @@ function _validateTetelRow_(sheet, row, col, value) {
   }
 
   // ── M oszlop: PO_VALIDÁLT újraszámítása
-  // Mindig lefut, függetlenül attól, hogy J vagy K változott
-  // KOZ-02 korlát: ez a trigger nem ismeri a partner kategóriáját (ÁLLANDÓ/MEGOSZTOTT),
-  // mert a SZÁMLA_TÉTELEK fülön nincs kategória oszlop. MEGOSZTOTT számla tételeinél
-  // a PO_VALIDÁLT értéke 'NEM' lesz akkor is, ha a fejlécsor státusza BEÉRKEZETT/JÓVÁHAGYVA.
-  // Ez a viselkedés a tervezett: az M oszlop csak PO-ellenőrzési segédadat, nem
-  // blokkolja a számlafeldolgozást. Teljes megoldás: SZAMLA_ID alapján visszaolvasni
-  // a BEJÖVŐ_SZÁMLÁK K oszlopát — de ez extra API hívás, Fázis 6-ra halasztva.
-  const currentPo   = String(poValue   || '').trim();
-  const currentConf = Number(confidenceValue);
+  // Kategória-alapú bypass: ha a számla ÁLLANDÓ vagy MEGOSZTOTT → PO_VALIDÁLT = 'N/A'
+  // SZAMLA_ID-n keresztül visszaolvassuk a BEJÖVŐ_SZÁMLÁK K oszlopát (1 extra hívás).
+  const szamlaId  = String(rowData[CONFIG.COLS.TETEL.SZAMLA_ID - 1] || '').trim();
+  const kategoria = szamlaId ? _getBejovoszamlaKategoria_(szamlaId) : '';
 
   let poValidalt;
-  if (currentPo === '') {
-    poValidalt = 'NEM'; // Nincs PO → nem validált
+  if (kategoria === CONFIG.KATEGORIAK.ALLANDO ||
+      kategoria === CONFIG.KATEGORIAK.MEGOSZTOTT) {
+    poValidalt = 'N/A'; // PO nem kötelező — bypass
   } else {
-    const fkOk   = _isProjektszamValid_(currentPo);
-    const confOk = !isNaN(currentConf) && currentConf >= CONFIG.PO_CONFIDENCE_THRESHOLD;
-    poValidalt   = (fkOk && confOk) ? 'IGEN' : 'NEM';
+    // PROJEKT vagy ismeretlen kategória: PO ellenőrzés
+    const currentPo   = String(poValue   || '').trim();
+    const currentConf = Number(confidenceValue);
+    if (currentPo === '') {
+      poValidalt = 'NEM';
+    } else {
+      const fkOk   = _isProjektszamValid_(currentPo);
+      const confOk = !isNaN(currentConf) && currentConf >= CONFIG.PO_CONFIDENCE_THRESHOLD;
+      poValidalt   = (fkOk && confOk) ? 'IGEN' : 'NEM';
+    }
   }
 
   sheet.getRange(row, CONFIG.COLS.TETEL.PO_VALIDALT).setValue(poValidalt);
@@ -284,6 +287,30 @@ function _validateTetelRow_(sheet, row, col, value) {
       console.warn('TETEL_VALIDÁCIÓ_HIBA sor ' + row + ': ' + err);
     });
   }
+}
+
+/**
+ * SZAMLA_ID alapján visszaolvassa a BEJÖVŐ_SZÁMLÁK K (KATEGORIA) oszlopát.
+ * Cél: ÁLLANDÓ/MEGOSZTOTT számlák tételeire N/A PO_VALIDÁLT kerüljön.
+ * @param {string} szamlaId
+ * @returns {string}  pl. 'PROJEKT', 'ÁLLANDÓ', 'MEGOSZTOTT', vagy '' ha nem találja
+ */
+function _getBejovoszamlaKategoria_(szamlaId) {
+  try {
+    const ss    = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(CONFIG.TABS.BEJOVO_SZAMLAK);
+    if (!sheet || sheet.getLastRow() < 2) return '';
+    const c    = CONFIG.COLS.BEJOVO;
+    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, c.KATEGORIA).getValues();
+    for (let i = 0; i < data.length; i++) {
+      if (String(data[i][c.SZAMLA_ID - 1] || '').trim() === szamlaId) {
+        return String(data[i][c.KATEGORIA - 1] || '').trim();
+      }
+    }
+  } catch (e) {
+    console.warn('_getBejovoszamlaKategoria_ hiba: ' + e.message);
+  }
+  return '';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

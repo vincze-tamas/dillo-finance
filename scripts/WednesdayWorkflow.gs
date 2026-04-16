@@ -33,6 +33,7 @@
 function wednesdayMorningDigest() {
   const today = new Date();
   console.log('wednesdayMorningDigest: ' + today.toISOString());
+  _assertProductionConfig_();
 
   if (!_isTodayDigestDay_(today)) {
     console.log('Ma nem digest nap — kihagyva. (Várt nap: ' +
@@ -92,6 +93,7 @@ function wednesdayMorningDigest() {
 function wednesdayAfternoonBatch() {
   const today = new Date();
   console.log('wednesdayAfternoonBatch: ' + today.toISOString());
+  _assertProductionConfig_();
 
   if (!_isTodayDigestDay_(today)) {
     console.log('Ma nem digest nap — batch kihagyva.');
@@ -646,8 +648,9 @@ function checkOverdueKotegek() {
       const utalasDate = utalasMap[kotegId];
       if (!utalasDate) return; // KÖTEGEK fülön nincs bejegyzés — kihagyja
 
-      utalasDate.setHours(0, 0, 0, 0);
-      if (utalasDate > limit3) return; // nem késedelmes még
+      const utalasNorm = new Date(utalasDate);
+      utalasNorm.setHours(0, 0, 0, 0);
+      if (utalasNorm > limit3) return; // nem késedelmes még
 
       overdue.push({
         szamlaId:    String(row[c.SZAMLA_ID    - 1] || ''),
@@ -655,8 +658,8 @@ function checkOverdueKotegek() {
         osszeg:      Number(row[c.OSSZEG_BRUTTO- 1] || 0),
         deviza:      String(row[c.DEVIZA        - 1] || 'HUF'),
         kotegId:     kotegId,
-        utalasDate:  formatDate(utalasDate),
-        napjaKesik:  Math.floor((today - utalasDate) / (24 * 60 * 60 * 1000)),
+        utalasDate:  formatDate(utalasNorm),
+        napjaKesik:  Math.floor((today - utalasNorm) / (24 * 60 * 60 * 1000)),
       });
     });
 

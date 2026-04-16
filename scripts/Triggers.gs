@@ -103,6 +103,8 @@ function _ensureTimeTrigger_(existing, fnName, type, intervalOrDay, hour) {
   let builder = ScriptApp.newTrigger(fnName).timeBased();
 
   if (type === 'everyMinutes') {
+    // GAS API korlát: everyMinutes() nem támogatja az inTimezone() hívást —
+    // percalapú triggereknek nincs timezone fogalma, ezért kihagyható.
     builder = builder.everyMinutes(intervalOrDay);
   } else if (type === 'everyDays') {
     builder = builder.everyDays(intervalOrDay).atHour(hour).inTimezone('Europe/Budapest');

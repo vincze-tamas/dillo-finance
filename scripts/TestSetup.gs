@@ -112,7 +112,7 @@ function _createStagingSheet_(rootFolder) {
   configSheet.getRange('A1:C1').setValues([['Kulcs', 'Érték', 'Státusz']]);
   // MIN-07: LAST_BATCH_DATE hozzáadva + tartomány javítva A2:C10-re (9 adatsor = sorok 2–10)
   configSheet.getRange('A2:C10').setValues([
-    ['HOLIDAYS_2026',           '2026-01-01,2026-01-02,2026-03-15,2026-04-03,2026-04-06,2026-05-01,2026-05-21,2026-08-20,2026-08-21,2026-10-23,2026-11-01,2026-12-24,2026-12-25,2026-12-26', 'ELLENŐRZENDŐ'],
+    ['HOLIDAYS_2026',           '2026-01-01,2026-01-02,2026-03-15,2026-04-03,2026-04-06,2026-05-01,2026-05-21,2026-08-20,2026-08-21,2026-10-23,2026-11-01,2026-12-24,2026-12-25,2026-12-26', 'VERIFIED'],
     ['HOLIDAYS_2027',           '', 'ELLENŐRZENDŐ'],
     ['WORKING_SATURDAYS_2026',  '2026-01-10,2026-08-08,2026-12-12', 'ELLENŐRZENDŐ'],
     ['WORKING_SATURDAYS_2027',  '', 'ELLENŐRZENDŐ'],

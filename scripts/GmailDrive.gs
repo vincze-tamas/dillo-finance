@@ -27,6 +27,7 @@ function processNewInvoices() {
   console.log('processNewInvoices indítás: ' + new Date().toISOString());
   console.log('TEST_MODE: ' + CONFIG.TEST_MODE);
   console.log('════════════════════════════════════════');
+  _assertProductionConfig_();
 
   const threads = GmailApp.search(CONFIG.GMAIL_QUERY);
 

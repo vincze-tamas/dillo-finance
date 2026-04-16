@@ -135,6 +135,9 @@ const CONFIG = (function () {
     // P11 (1 Ft próbautalás, testP11OneFt()) dönti el. Péter visszajelzése után módosítandó.
     BATCH_AMOUNT_UNIT: 'HUF',
 
+    // ── Gemini model neve — itt módosítható, ne a GeminiOCR.gs-ben
+    GEMINI_MODEL: 'gemini-2.5-flash',
+
     // ── Validáció
     // 3–4 nagybetű + 4 szám (pl. FCA2601, IMME2601)
     PROJEKTSZAM_REGEX: /^[A-Z]{3,4}[0-9]{4}$/,
@@ -264,6 +267,27 @@ function getGeminiApiKey() {
 // ─────────────────────────────────────────────────────────────────────────────
 // KONFIGURÁCIÓ ELLENŐRZÉS (segédfüggvény — teszteléshez futtatható)
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Ellenőrzi az éles konfigurációt — csak TEST_MODE=false esetén fut.
+ * Ha bármelyik kritikus mező üres → hibát dob, hogy ne legyen néma hibás futás.
+ * Hívás: processNewInvoices(), wednesdayMorningDigest(), wednesdayAfternoonBatch() elején.
+ */
+function _assertProductionConfig_() {
+  if (CONFIG.TEST_MODE) return;
+  const required = {
+    SPREADSHEET_ID:     CONFIG.SPREADSHEET_ID,
+    INVOICES_FOLDER_ID: CONFIG.INVOICES_FOLDER_ID,
+    CHAT_WEBHOOK_ADMIN: CONFIG.CHAT_WEBHOOK_ADMIN,
+  };
+  const missing = Object.keys(required).filter(function(k) { return !required[k]; });
+  if (missing.length > 0) {
+    throw new Error(
+      'Éles konfiguráció hiányos — töltsd ki a Config.gs-ben: ' + missing.join(', ') + '\n' +
+      'Config.gs → _IDS_.prod és _WEBHOOKS_.prod objektumok.'
+    );
+  }
+}
 
 /**
  * Kiírja a konzolra az aktív konfigurációt.

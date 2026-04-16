@@ -9,7 +9,7 @@
  *   → SheetWriter hívás (atomikus írás)
  *   → Visszaadja { szallitoNev, szamlaszam, kelt } a Drive fájl átnevezéséhez
  *
- * GEMINI MODEL: gemini-2.5-flash
+ * GEMINI MODEL: CONFIG.GEMINI_MODEL (Config.gs-ben módosítható)
  * API KEY: PropertiesService → 'GEMINI_API_KEY' (getGeminiApiKey() — Config.gs)
  */
 
@@ -17,7 +17,6 @@
 // KONSTANSOK
 // ─────────────────────────────────────────────────────────────────────────────
 
-const GEMINI_MODEL    = 'gemini-2.5-flash';
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -135,7 +134,7 @@ function processInvoiceWithGemini(pdfBlob, metadata) {
  */
 function _callGeminiApi_(pdfBlob, validProjects) {
   const apiKey  = getGeminiApiKey();
-  const url     = GEMINI_API_BASE + GEMINI_MODEL + ':generateContent?key=' + apiKey;
+  const url     = GEMINI_API_BASE + CONFIG.GEMINI_MODEL + ':generateContent?key=' + apiKey;
 
   const pdfBase64 = Utilities.base64Encode(pdfBlob.getBytes());
 

@@ -84,7 +84,7 @@ function _setupTab_(ss, tabName, setupFn) {
  */
 function _setHeaders_(sheet, headers) {
   const range = sheet.getRange(1, 1, 1, headers.length);
-  if (sheet.getRange('A1').getValue() === '') {
+  if (sheet.getLastColumn() === 0 || sheet.getRange('A1').getValue() === '') {
     range.setValues([headers]);
     console.log('  → Fejlécek beállítva: ' + headers.length + ' oszlop');
   } else {
