@@ -213,7 +213,7 @@ A rendszer 4 típusú validációt alkalmaz a manuális adatbevitel hibáinak me
 
 | Típus | Fül / Oszlop | Szabály |
 |---|---|---|
-| Dropdown | BEJÖVŐ_SZÁMLÁK Q | BEÉRKEZETT / HIÁNYOS_PO / VISSZAUTASÍTVA / JÓVÁHAGYVA / BEKÖTEGELT / TELJESÍTVE / AI_HIBA |
+| Dropdown | BEJÖVŐ_SZÁMLÁK Q | BEÉRKEZETT / HIÁNYOS_PO / VISSZAUTASÍTVA / JÓVÁHAGYVA / UTALVA / AI_HIBA / LOCK_TIMEOUT |
 | Dropdown | BEJÖVŐ_SZÁMLÁK L | HUF / EUR |
 | Dropdown | BEJÖVŐ_SZÁMLÁK M | PROJEKT / ÁLLANDÓ |
 | FK referencia | SZÁMLA_TÉTELEK J → PROJEKTEK A | VLOOKUP ellenőrzés: ha J érték nem szerepel PROJEKTEK.A-ban → piros kiemelés |

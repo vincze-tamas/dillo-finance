@@ -236,8 +236,6 @@ function _setConditionalFormatting_(sheet) {
     ['HIÁNYOS_PO',     '#fce8b2', '#7f6000'],
     // JÓVÁHAGYVA — zöld
     ['JÓVÁHAGYVA',     '#b7e1cd', '#0d652d'],
-    // BEKÖTEGELT — szürke
-    ['BEKÖTEGELT',     '#efefef', '#434343'],
     // UTALVA — lila
     ['UTALVA',         '#d9d2e9', '#4c1130'],
     // BEÉRKEZETT — kék
@@ -252,7 +250,7 @@ function _setConditionalFormatting_(sheet) {
   });
 
   sheet.setConditionalFormatRules(rules);
-  console.log('  → Conditional formatting beállítva (8 státusz-szabály, Q oszlop alapján)');
+  console.log('  → Conditional formatting beállítva (7 státusz-szabály, Q oszlop alapján)');
 }
 
 /**

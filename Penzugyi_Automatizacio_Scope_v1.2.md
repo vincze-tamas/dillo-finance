@@ -81,8 +81,7 @@ A folyamat sorrendje rögzített, nem cserélhető fel:
 | HIÁNYOS_PO | Legalább 1 számlatétel: PO nem található a PROJEKTEK-ben, vagy konfidencia <95% |
 | VISSZAUTASÍTVA | Manuális döntés után (nem automatikus) |
 | JÓVÁHAGYVA | Operatív jóváhagyás megérkezett |
-| BEKÖTEGELT | Szerdai kötegbe bekerült |
-| TELJESÍTVE | Pénzügyi vezető megerősítette az utalást |
+| UTALVA | Pénzügyi vezető megerősítette az utalást |
 | AI_HIBA | Gemini API 3× sikertelen hívás után |
 
 **HIÁNYOS_PO kezelés:**
@@ -111,7 +110,7 @@ Az OPS Chat értesítő tartalmazza a **tétel-szintű bontást**: melyik sorban
 - Fájl Drive-ra mentve + Google Chat értesítő Pénzügyi vezetőnek
 
 **+3 napos ellenőrző trigger:**
-Ha egy BEKÖTEGELT státuszú tétel 3 napja nem kerül TELJESÍTVE státuszba, automatikus figyelmeztetés megy a Pénzügyi vezetőnek.
+Ha egy JÓVÁHAGYVA státuszú számla KOTEG_ID-je 3 napja ki van töltve, de még nem UTALVA, automatikus figyelmeztetés megy a Pénzügyi vezetőnek.
 
 ### 4.3 Dashboard — Looker Studio
 

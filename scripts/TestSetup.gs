@@ -548,7 +548,7 @@ function insertTestRowsForFazis3() {
   console.log('  2. runBatchNow()');
   console.log('     → .txt kötegfájl a Kötegek TEST mappába');
   console.log('     → FEJ sor: 174 char | TÉTEL sorok: 249 char | LÁB: 24 char');
-  console.log('     → [F3-01], [F3-02], [F3-03] státusza → BEKÖTEGELT');
+  console.log('     → [F3-01], [F3-02], [F3-03] KOTEG_ID (V) kitöltve — Q státusz JÓVÁHAGYVA marad');
   console.log('     → KÖTEGEK fülön új sor keletkezett');
   console.log('════════════════════════════════════════');
 }

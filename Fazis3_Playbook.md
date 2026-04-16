@@ -120,11 +120,11 @@ P10 — SEPA formátum (Péter) ────────────────
   - Fájlnév: `BATCH-2026-W{hét}-HUF_{dátum}.txt`
   - Drive mentés: `Kötegek/2026/` mappába
   - KÖTEGEK fülre devizánként külön sor felvétele
-  - Érintett számlák státusza → `BEKÖTEGELT`
+  - Érintett számlák V oszlopa (KOTEG_ID) kitöltve — Q státusz JÓVÁHAGYVA marad
   - Chat üzenet **Finance webhook**-ra (Péter): Drive fájl link(ek)
 
 - [ ] **+3 napos ellenőrző trigger** (naponta fut):
-  - BEKÖTEGELT státuszú tételek ahol az utalás dátuma > 3 napja lejárt és nem TELJESÍTVE
+  - JÓVÁHAGYVA státuszú tételek ahol KOTEG_ID nem üres ÉS utalás dátuma > 3 napja lejárt és nem UTALVA
   - Chat figyelmeztetés Finance webhook-ra (Péter)
 
 **✅ Kész, ha:** Kézi trigger futtatásakor `.txt` kötegállomány generálódik a `Kötegek/2026/` mappában, tartalmaz legalább 1 FEJ + 1 TÉTEL + 1 LÁB rekordot, minden sor pontosan 174/249/24 karakter.
@@ -169,7 +169,7 @@ Fázis 3 csak akkor zárható, ha **mind a 3 task + P9 + P11** kész:
 - [ ] MagNet NetBank: importálható hiba nélkül (Task 33 ✅)
 - [ ] getNextWorkday(): hétvégén/ünnepnapon a következő munkanapot adja vissza
 - [ ] KÖTEGEK fülön új sor keletkezett a generálás után
-- [ ] Érintett számlák státusza → BEKÖTEGELT
+- [ ] Érintett számlák V oszlopa (KOTEG_ID) kitöltve — Q státusz JÓVÁHAGYVA marad (BEKÖTEGELT nem létezik — levezethetó a KOTEG_ID-ből)
 
 Ha bármelyik nem teljesül: **Fázis 4 nem indul el** (de Looker Studio technikailag párhuzamosan megkezdhető).
 

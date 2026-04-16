@@ -166,7 +166,7 @@ Előfeltétel: P3, P4, P5, P6, P7 kész.
 
 - [ ] **02 — Data validation + conditional formatting**
   BEJÖVŐ_SZÁMLÁK Q oszlop (Státusz) dropdown:
-  `BEÉRKEZETT, HIÁNYOS_PO, VISSZAUTASÍTVA, JÓVÁHAGYVA, BEKÖTEGELT, TELJESÍTVE, AI_HIBA`
+  `BEÉRKEZETT, HIÁNYOS_PO, VISSZAUTASÍTVA, JÓVÁHAGYVA, UTALVA, AI_HIBA, LOCK_TIMEOUT`
   L oszlop (Deviza) dropdown: `HUF, EUR`
   M oszlop (Kategória) dropdown: `PROJEKT, ÁLLANDÓ`
   Conditional formatting soronként a Q oszlop értéke alapján:
@@ -174,9 +174,10 @@ Előfeltétel: P3, P4, P5, P6, P7 kész.
   — HIÁNYOS_PO = sárga
   — VISSZAUTASÍTVA = piros
   — JÓVÁHAGYVA = zöld
-  — BEKÖTEGELT = lila
-  — TELJESÍTVE = szürke
+  — UTALVA = lila
   — AI_HIBA = sötétpiros
+  — LOCK_TIMEOUT = narancs
+  *(BEKÖTEGELT nem státusz — a kötegelt állapot a V oszlop KOTEG_ID értékéből olvasható ki)*
 
 - [ ] **03 — Apps Script projekt + CONFIG + Gemini key**
   Sheet megnyitva autobot@-ból → Extensions → Apps Script
@@ -306,9 +307,9 @@ Előfeltétel: P8 ✅ kész. P9, P10, P11 kell a teljes kódhoz — de HUF ág P
   — Fájlnév: `BATCH-2026-W{hét}-HUF_{dátum}.txt` / `BATCH-2026-W{hét}-EUR_{dátum}.txt`
   — Drive mentés: `Kötegek/2026/` mappába
   — KÖTEGEK fülre devizánként külön sor felvétele
-  — BEKÖTEGELT státusz update az érintett számlákra
+  — Érintett számlák V oszlopa (KOTEG_ID) kitöltve — Q státusz JÓVÁHAGYVA marad
   — Chat értesítő Péternek: Drive fájl link(ek)
-  +3 napos ellenőrző: naponta fut, BEKÖTEGELT státuszú tételek ahol az utalás dátuma > 3 napja lejárt és nem TELJESÍTVE → Chat figyelmeztetés Péternek.
+  +3 napos ellenőrző: naponta fut, JÓVÁHAGYVA státuszú + KOTEG_ID nem üres + utalás dátuma > 3 napja → Chat figyelmeztetés Péternek.
 
 ### Pénzügyi vezető (Péter)
 

@@ -253,7 +253,7 @@ Péter (P6)  ──────────────┼──► Péter (04)
 **BEJÖVŐ_SZÁMLÁK fül:**
 
 - [ ] Q oszlop (Státusz) → **Data → Data validation → Dropdown (from a list):**
-  `BEÉRKEZETT,HIÁNYOS_PO,VISSZAUTASÍTVA,JÓVÁHAGYVA,BEKÖTEGELT,TELJESÍTVE,AI_HIBA`
+  `BEÉRKEZETT,HIÁNYOS_PO,VISSZAUTASÍTVA,JÓVÁHAGYVA,UTALVA,AI_HIBA,LOCK_TIMEOUT`
 - [ ] L oszlop (Deviza) → **Data validation → Dropdown:** `HUF,EUR`
 - [ ] M oszlop (Kategória) → **Data validation → Dropdown:** `PROJEKT,ÁLLANDÓ`
 - [ ] Conditional formatting — soronként, Q oszlop értéke alapján:
@@ -261,9 +261,10 @@ Péter (P6)  ──────────────┼──► Péter (04)
   - [ ] `HIÁNYOS_PO` → sor háttere: **sárga** (`#fff2cc`)
   - [ ] `VISSZAUTASÍTVA` → sor háttere: **piros** (`#f4cccc`)
   - [ ] `JÓVÁHAGYVA` → sor háttere: **zöld** (`#d9ead3`)
-  - [ ] `BEKÖTEGELT` → sor háttere: **lila** (`#d9d2e9`)
-  - [ ] `TELJESÍTVE` → sor háttere: **szürke** (`#efefef`)
+  - [ ] `UTALVA` → sor háttere: **lila** (`#d9d2e9`)
   - [ ] `AI_HIBA` → sor háttere: **sötétpiros** (`#990000`, fehér betű)
+  - [ ] `LOCK_TIMEOUT` → sor háttere: **narancs** (`#f9cb9c`)
+  *(BEKÖTEGELT nem státusz — a V oszlop KOTEG_ID értékéből levezethető)*
 
 **PROJEKTEK fül:**
 
