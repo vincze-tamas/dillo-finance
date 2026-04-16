@@ -180,10 +180,22 @@ function notifyWednesdayDigest(pendingRows, utalasDate) {
   const displayRows= pendingRows.slice(0, MAX_ROWS);
   const extraCount = pendingRows.length - displayRows.length;
 
+  const todayMs = new Date().setHours(0, 0, 0, 0);
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+
   let itemLines = displayRows.map(function(r) {
+    let urgency = '';
+    if (r.fizhatarido) {
+      const hatMs = new Date(r.fizhatarido).setHours(0, 0, 0, 0);
+      if (hatMs < todayMs) {
+        urgency = ' ⚠️ *LEJÁRT*';
+      } else if (hatMs - todayMs <= sevenDaysMs) {
+        urgency = ' ⚠️ *<7 nap*';
+      }
+    }
     return '  • ' + r.szallitoNev +
            ' — ' + _formatAmount_(r.osszeg, r.deviza) +
-           ' (határidő: ' + (r.fizhatarido || '–') + ')';
+           ' (határidő: ' + (r.fizhatarido || '–') + ')' + urgency;
   }).join('\n');
 
   if (extraCount > 0) {
