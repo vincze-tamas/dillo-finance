@@ -404,6 +404,196 @@ function testTask24DirectRejection() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// F3-S1b TESZT SEGÉD — Fázis 3 teszt sorok betöltése
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Teszt sorokat tölt be a staging sheet-be a Fázis 3 (WednesdayWorkflow + BatchGenerator) teszteléséhez.
+ *
+ * Amit létrehoz:
+ *   PARTNEREK fül   — 3 teszt partner (PROJEKT×2, ÁLLANDÓ×1) valódi formátumú IBAN-nal
+ *   BEJÖVŐ_SZÁMLÁK  — 5 teszt sor különböző státuszokkal:
+ *     • [F3-01] JÓVÁHAGYVA  | PROJEKT  | Teszt Építő Kft.    → batch-be kerül
+ *     • [F3-02] JÓVÁHAGYVA  | ÁLLANDÓ  | Teszt Irodaház Kft. → batch-be kerül
+ *     • [F3-03] JÓVÁHAGYVA  | PROJEKT  | Teszt Anyag Bt.     → 5 napja lejárt → kiemelés
+ *     • [F3-04] BEÉRKEZETT  | PROJEKT  | Teszt Fejlesztő Kft.→ digestben látható (nem batch)
+ *     • [F3-05] HIÁNYOS_PO  | PROJEKT  | Teszt Design Kft.   → digestben látható (nem batch)
+ *
+ * runDigestNow() után: Admin Chat-en üzenet érkezik a JÓVÁHAGYVA számlákkal
+ * runBatchNow()  után: .txt kötegfájl generálódik a Kötegek TEST mappába ([F3-01], [F3-02], [F3-03])
+ *
+ * FIGYELEM: Idempotens — ha [F3-01]...[F3-05] ID-k már szerepelnek a sheet-ben, nem duplikálja.
+ *
+ * Futtatás: Script Editor → insertTestRowsForFazis3 → ▶ Run
+ */
+function insertTestRowsForFazis3() {
+  if (!CONFIG.TEST_MODE) {
+    throw new Error('insertTestRowsForFazis3() csak TEST_MODE=true esetén futtatható!');
+  }
+
+  console.log('════════════════════════════════════════');
+  console.log('Fázis 3 teszt sorok betöltése...');
+  console.log('════════════════════════════════════════');
+
+  const ss      = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  const bejovo  = ss.getSheetByName(CONFIG.TABS.BEJOVO_SZAMLAK);
+  const partner = ss.getSheetByName(CONFIG.TABS.PARTNEREK);
+
+  if (!bejovo || !partner) {
+    throw new Error('BEJÖVŐ_SZÁMLÁK vagy PARTNEREK fül nem található — futtasd setupSSOT()-t előbb!');
+  }
+
+  // ── 1. TESZT PARTNEREK ────────────────────────────────────────────────────
+  // Formátum: NEV | ADOSZAM | BANKSZAMLA | KATEGORIA | EMAIL | FIZETESI_HATARIDO | AKTIV
+  // BANKSZAMLA: valódi formátum (8-8-8 vagy 8-8), csak számok (a _buildBankMap_ így normalizálja)
+  const testPartners = [
+    ['Teszt Építő Kft.',    '11111111-1-11', '10102244-12345678-00000000', 'PROJEKT', 'epito@teszt.hu',   30, 'IGEN'],
+    ['Teszt Irodaház Kft.', '22222222-2-22', '10400000-87654321-00000000', 'ÁLLANDÓ', 'iroda@teszt.hu',   8,  'IGEN'],
+    ['Teszt Anyag Bt.',     '33333333-3-33', '11773016-77777777-00000000', 'PROJEKT', 'anyag@teszt.hu',   15, 'IGEN'],
+  ];
+
+  // Deduplikáció: már meglévő adószámok kiszűrése
+  const existingPartnerData = partner.getDataRange().getValues();
+  const existingAdoszamok   = new Set(
+    existingPartnerData.slice(1).map(function(r) { return String(r[1] || '').trim(); })
+  );
+
+  let partnerAdded = 0;
+  testPartners.forEach(function(p) {
+    if (existingAdoszamok.has(p[1])) {
+      console.log('  ℹ️  Partner már létezik: ' + p[0] + ' — kihagyva.');
+    } else {
+      partner.appendRow(p);
+      partnerAdded++;
+      console.log('  ✓ Partner hozzáadva: ' + p[0] + ' (adószám: ' + p[1] + ')');
+    }
+  });
+  console.log('Partnerek: ' + partnerAdded + ' db hozzáadva.');
+
+  // ── 2. TESZT SZÁMLÁK ──────────────────────────────────────────────────────
+  const c    = CONFIG.COLS.BEJOVO;
+  const now  = new Date();
+  const today = formatDate(now);
+
+  // Fizetési határidők
+  const határidőJövő  = formatDate(new Date(now.getTime() + 10 * 86400000)); // +10 nap
+  const határidőLejárt= formatDate(new Date(now.getTime() -  5 * 86400000)); // -5 nap (lejárt!)
+  const határidőMa    = formatDate(new Date(now.getTime() +  3 * 86400000)); // +3 nap
+
+  // Deduplikáció: már meglévő számla ID-k kiszűrése
+  const existingBejovo  = bejovo.getLastRow() > 1
+    ? bejovo.getRange(2, 1, bejovo.getLastRow() - 1, 1).getValues().map(function(r) { return String(r[0]); })
+    : [];
+  const existingIds = new Set(existingBejovo);
+
+  // Minden sor: 23 oszlop (A–W), indexek CONFIG.COLS.BEJOVO alapján (1-alapú → array 0-alapú)
+  function makeRow(id, nev, adoszam, szamlaszam, osszeg, deviza, kategoria, poSummary, poConf, poReasoning, statusz, jovahagyo, jovahagyasDatum) {
+    const row = new Array(c.GMAIL_MESSAGE_ID).fill('');
+    row[c.SZAMLA_ID          - 1] = id;
+    row[c.SZALLITO_NEV       - 1] = nev;
+    row[c.ADOSZAM            - 1] = adoszam;
+    row[c.SZAMLASZAM         - 1] = szamlaszam;
+    row[c.KELT               - 1] = today;
+    row[c.OSSZEG_NETTO       - 1] = Math.round(osszeg / 1.27); // nettó visszafelé számolva 27% ÁFA-ból
+    row[c.TELJESITES         - 1] = today;
+    row[c.FIZHATARIDO        - 1] = (id === '[F3-03]') ? határidőLejárt : (id === '[F3-04]' || id === '[F3-05]') ? határidőMa : határidőJövő;
+    row[c.OSSZEG_BRUTTO      - 1] = osszeg;
+    row[c.DEVIZA             - 1] = deviza;
+    row[c.KATEGORIA          - 1] = kategoria;
+    row[c.DRIVE_URL          - 1] = 'https://drive.google.com/file/d/TESZT_F3_PLACEHOLDER';
+    row[c.PO_SUMMARY         - 1] = poSummary;
+    row[c.PO_CONFIDENCE      - 1] = poConf;
+    row[c.PO_REASONING       - 1] = poReasoning;
+    row[c.STATUSZ            - 1] = statusz;
+    row[c.JOVAHAGYO          - 1] = jovahagyo;
+    row[c.JOVAHAGYAS_DATUM   - 1] = jovahagyasDatum;
+    row[c.GMAIL_MESSAGE_ID   - 1] = 'TESZT_F3_' + id.replace(/[\[\]]/g, '');
+    return row;
+  }
+
+  const testRows = [
+    // id          nev                   adoszam           szamlaszam         osszeg  deviza  kategoria  poSummary  poConf  poReasoning                  statusz        jovahagyo              jovhDatum
+    makeRow('[F3-01]', 'Teszt Építő Kft.',    '11111111-1-11', 'EPITO-2026-042',  381000, 'HUF', 'PROJEKT', 'FCA2601', 98,    'Magabiztos egyezés',         'JÓVÁHAGYVA',  'teszt@armadillo.hu',  today),
+    makeRow('[F3-02]', 'Teszt Irodaház Kft.', '22222222-2-22', 'IRODA-2026-018',  127000, 'HUF', 'ÁLLANDÓ', 'N/A',     100,   'ÁLLANDÓ — PO nem szükséges', 'JÓVÁHAGYVA',  'teszt@armadillo.hu',  today),
+    makeRow('[F3-03]', 'Teszt Anyag Bt.',     '33333333-3-33', 'ANYAG-2026-007',  254000, 'HUF', 'PROJEKT', 'FCA2602', 97,    'Egyértelmű projekt egyezés', 'JÓVÁHAGYVA',  'teszt@armadillo.hu',  today),
+    makeRow('[F3-04]', 'Teszt Fejlesztő Kft.','11111111-1-11', 'FEJL-2026-031',   95200,  'HUF', 'PROJEKT', 'FCA2601', 99,    'Magabiztos egyezés',         'BEÉRKEZETT',  '',                    ''),
+    makeRow('[F3-05]', 'Teszt Design Kft.',   '22222222-2-22', 'DSGN-2026-005',   63500,  'HUF', 'PROJEKT', 'HIÁNYOS', 0,     'NINCS_PO',                   'HIÁNYOS_PO',  '',                    ''),
+  ];
+
+  let szamlaAdded = 0;
+  testRows.forEach(function(row) {
+    const id = row[c.SZAMLA_ID - 1];
+    if (existingIds.has(id)) {
+      console.log('  ℹ️  Számla már létezik: ' + id + ' — kihagyva.');
+    } else {
+      bejovo.appendRow(row);
+      szamlaAdded++;
+      console.log('  ✓ Számla hozzáadva: ' + id + ' | ' + row[c.SZALLITO_NEV - 1] +
+        ' | ' + row[c.OSSZEG_BRUTTO - 1] + ' HUF | ' + row[c.STATUSZ - 1]);
+    }
+  });
+  console.log('Számlák: ' + szamlaAdded + ' db hozzáadva.');
+
+  // ── 3. Összefoglaló ───────────────────────────────────────────────────────
+  console.log('');
+  console.log('════════════════════════════════════════');
+  console.log('✅ Fázis 3 teszt sorok betöltve. Most futtatható:');
+  console.log('');
+  console.log('  1. runDigestNow()');
+  console.log('     → Admin Chat-en üzenet érkezik');
+  console.log('     → 3 JÓVÁHAGYVA számla listázva (összesen: ' +
+    (381000 + 127000 + 254000).toLocaleString() + ' HUF)');
+  console.log('     → [F3-03] LEJÁRT fizetési határidővel kiemelve (5 napja lejárt)');
+  console.log('');
+  console.log('  2. runBatchNow()');
+  console.log('     → .txt kötegfájl a Kötegek TEST mappába');
+  console.log('     → FEJ sor: 174 char | TÉTEL sorok: 249 char | LÁB: 24 char');
+  console.log('     → [F3-01], [F3-02], [F3-03] státusza → BEKÖTEGELT');
+  console.log('     → KÖTEGEK fülön új sor keletkezett');
+  console.log('════════════════════════════════════════');
+}
+
+/**
+ * Törli a Fázis 3 teszt sorokat a BEJÖVŐ_SZÁMLÁK és PARTNEREK fülekről.
+ * Hasznos: újra akarod futtatni a tesztet tiszta lappal.
+ * Futtatás: Script Editor → clearTestRowsForFazis3 → ▶ Run
+ */
+function clearTestRowsForFazis3() {
+  if (!CONFIG.TEST_MODE) {
+    throw new Error('clearTestRowsForFazis3() csak TEST_MODE=true esetén futtatható!');
+  }
+
+  const ss      = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  const bejovo  = ss.getSheetByName(CONFIG.TABS.BEJOVO_SZAMLAK);
+  const partner = ss.getSheetByName(CONFIG.TABS.PARTNEREK);
+
+  const F3_IDS      = new Set(['[F3-01]','[F3-02]','[F3-03]','[F3-04]','[F3-05]']);
+  const F3_ADOSZAMOK= new Set(['11111111-1-11','22222222-2-22','33333333-3-33']);
+
+  // Sorok törlése visszafelé (hogy az index ne csússzon el)
+  let deleted = 0;
+
+  function deleteMatchingRows(sheet, colIndex, matchSet) {
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return 0;
+    const vals = sheet.getRange(2, colIndex, lastRow - 1, 1).getValues();
+    let count = 0;
+    for (let i = vals.length - 1; i >= 0; i--) {
+      if (matchSet.has(String(vals[i][0]).trim())) {
+        sheet.deleteRow(i + 2); // +2: 1-alapú + fejléc sor
+        count++;
+      }
+    }
+    return count;
+  }
+
+  deleted += deleteMatchingRows(bejovo,  CONFIG.COLS.BEJOVO.SZAMLA_ID,  F3_IDS);
+  deleted += deleteMatchingRows(partner, CONFIG.COLS.PARTNER.ADOSZAM,   F3_ADOSZAMOK);
+
+  console.log('✅ Fázis 3 teszt sorok törölve: ' + deleted + ' db (BEJÖVŐ_SZÁMLÁK + PARTNEREK).');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CLEANUP (opcionális — csak ha el akarod távolítani a teszt környezetet)
 // ─────────────────────────────────────────────────────────────────────────────
 
