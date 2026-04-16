@@ -303,6 +303,107 @@ function processInvoiceById() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TASK 24 TESZT SEGÉD — visszautasítás email + PDF áthelyezés önálló teszt
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Task 24 direkt teszt: visszautasítás email + Drive áthelyezés, onEdit trigger nélkül.
+ *
+ * Ez a függvény nem az onEdit úton megy végig — közvetlenül hívja a belső
+ * _sendRejectionEmailToPartner_() és _movePdfToRejectedFolder_() függvényeket.
+ * Hasznos: ha az onEdit trigger nem tüzel, mégis le akarod ellenőrizni a logikát.
+ *
+ * Teljes (onEdit) teszt menete a sheet-ben:
+ *   1. Nyisd meg az SSOT sheet BEJÖVŐ_SZÁMLÁK fülét
+ *   2. Keress egy HIÁNYOS_PO státuszú sort (Q oszlop)
+ *   3. T oszlopba írj visszautasítás okot (pl. "Hibás számlaszám")
+ *   4. Q oszlopot változtasd VISSZAUTASÍTVA-ra
+ *   5. Ellenőrzési pontok:
+ *      ✅ Chat értesítő megérkezik
+ *      ✅ Email megérkezik → vincze.tamas.ev@gmail.com (TEST_MODE)
+ *           Tárgy: "[Armadillo] Számla visszautasítva — [számla sorszáma]"
+ *      ✅ PDF eltűnik a Bejövő számlák TEST mappából
+ *      ✅ PDF megjelenik a Visszautasított TEST mappában
+ *      ✅ Q → VISSZAUTASÍTVA-ból tovább NEM módosítható (terminális státusz)
+ *
+ * Futtatás: Script Editor → testTask24DirectRejection → ▶ Run
+ */
+function testTask24DirectRejection() {
+  if (!CONFIG.TEST_MODE) {
+    throw new Error('testTask24DirectRejection() csak TEST_MODE=true esetén futtatható!');
+  }
+
+  console.log('════════════════════════════════════════');
+  console.log('Task 24 — Direkt visszautasítás teszt');
+  console.log('════════════════════════════════════════');
+
+  // ── 1. BEJÖVŐ_SZÁMLÁK legutolsó sorának adatai ───────────────────────────
+  const ss       = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  const sheet    = ss.getSheetByName(CONFIG.TABS.BEJOVO_SZAMLAK);
+  const lastRow  = sheet.getLastRow();
+
+  if (lastRow < 2) {
+    console.log('⚠️  A BEJÖVŐ_SZÁMLÁK fülön nincs adatsor — futtasd előbb processInvoiceById()-t!');
+    return;
+  }
+
+  const c       = CONFIG.COLS.BEJOVO;
+  const rowData = sheet.getRange(lastRow, 1, 1, c.VISSZAUTASITAS_OKA).getValues()[0];
+
+  const szamlaId    = String(rowData[c.SZAMLA_ID       - 1] || '');
+  const szallitoNev = String(rowData[c.SZALLITO_NEV    - 1] || '');
+  const adoszam     = String(rowData[c.ADOSZAM         - 1] || '');
+  const szamlaszam  = String(rowData[c.SZAMLASZAM      - 1] || szamlaId);
+  const driveFileId = String(rowData[c.DRIVE_FILE_ID   - 1] || '');
+  const statusz     = String(rowData[c.STATUSZ         - 1] || '');
+
+  console.log('Utolsó sor (' + lastRow + '): ' + szamlaId + ' | ' + szallitoNev + ' | ' + statusz);
+  console.log('Adószám: ' + adoszam);
+  console.log('Számla sorszáma: ' + szamlaszam);
+  console.log('Drive fájl ID: ' + (driveFileId || '⚠️  ÜRES'));
+
+  const tesztOk = 'Teszt visszautasítás — Task 24';
+
+  // ── 2. Email küldés ───────────────────────────────────────────────────────
+  console.log('');
+  console.log('── Email küldés teszt ──');
+  try {
+    _sendRejectionEmailToPartner_(adoszam, szallitoNev, szamlaszam, tesztOk);
+  } catch (e) {
+    console.error('❌ Email hiba: ' + e.message);
+  }
+
+  // ── 3. PDF áthelyezés ─────────────────────────────────────────────────────
+  console.log('');
+  console.log('── PDF áthelyezés teszt ──');
+  if (driveFileId) {
+    try {
+      _movePdfToRejectedFolder_(driveFileId);
+      console.log('   Ellenőrizd: a PDF eltűnt a Bejövő számlák TEST mappából');
+      console.log('   és megjelent a Visszautasított TEST mappában.');
+    } catch (e) {
+      console.error('❌ PDF áthelyezés hiba: ' + e.message);
+    }
+  } else {
+    console.warn('⚠️  DRIVE_FILE_ID üres — PDF áthelyezés kihagyva.');
+  }
+
+  // ── 4. Összegzés ──────────────────────────────────────────────────────────
+  console.log('');
+  console.log('════════════════════════════════════════');
+  console.log('✅ Task 24 direkt teszt kész. Ellenőrizd:');
+  console.log('   1. vincze.tamas.ev@gmail.com beérkező levél');
+  console.log('      Tárgy: "[Armadillo] Számla visszautasítva — ' + szamlaszam + '"');
+  console.log('   2. Drive Visszautasított TEST mappa tartalmazza a PDF-et');
+  console.log('   3. A Bejövő számlák TEST mappából eltűnt a PDF');
+  console.log('');
+  console.log('   Teljes onEdit teszt:');
+  console.log('   → Sheet Q oszlop: ' + statusz + ' → VISSZAUTASÍTVA');
+  console.log('   → T oszlop visszautasítás oka: tetszőleges szöveg');
+  console.log('════════════════════════════════════════');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CLEANUP (opcionális — csak ha el akarod távolítani a teszt környezetet)
 // ─────────────────────────────────────────────────────────────────────────────
 

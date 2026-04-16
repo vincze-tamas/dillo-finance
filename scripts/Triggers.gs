@@ -425,4 +425,143 @@ function _onBejovoszamlaStatuszChange_(sheet, row, ujStatusz, regiStatusz) {
   } catch (e) {
     console.error('notifyStatusChange hiba: ' + e.message);
   }
+
+  // ── VISSZAUTASÍTVA → visszautasítás email + PDF áthelyezés ───────────────
+  if (ujTrimmed === 'VISSZAUTASÍTVA') {
+    const adoszam     = String(rowData[c.ADOSZAM       - 1] || '');
+    const szamlaszam  = String(rowData[c.SZAMLASZAM    - 1] || szamlaId);
+    const driveFileId = String(rowData[c.DRIVE_FILE_ID - 1] || '');
+
+    try {
+      _sendRejectionEmailToPartner_(adoszam, szallitoNev, szamlaszam, visszautasitasOka);
+    } catch (e) {
+      console.error('Visszautasítás email hiba: ' + e.message);
+      notifyAdmin('Visszautasítás email sikertelen', e.message, e);
+    }
+
+    if (driveFileId) {
+      try {
+        _movePdfToRejectedFolder_(driveFileId);
+      } catch (e) {
+        console.error('PDF áthelyezés hiba: ' + e.message);
+        notifyAdmin('PDF áthelyezés sikertelen', e.message, e);
+      }
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VISSZAUTASÍTÁS SEGÉDFÜGGVÉNYEK
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Partner email keresése adószám alapján a PARTNEREK fülből.
+ * @param {string} adoszam
+ * @returns {string|null} email cím, vagy null ha nincs találat / üres
+ */
+function _getPartnerEmail_(adoszam) {
+  if (!adoszam) return null;
+  try {
+    const ss    = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(CONFIG.TABS.PARTNEREK);
+    if (!sheet) { console.warn('_getPartnerEmail_: PARTNEREK fül nem található.'); return null; }
+    const data = sheet.getDataRange().getValues();
+    const c    = CONFIG.COLS.PARTNER;
+    for (let i = 1; i < data.length; i++) { // 0. sor = fejléc
+      if (String(data[i][c.ADOSZAM - 1]).trim() === adoszam.trim()) {
+        const email = String(data[i][c.EMAIL - 1]).trim();
+        console.log('  Partner email megtalálva: ' + email + ' (adószám: ' + adoszam + ')');
+        return email || null;
+      }
+    }
+    console.warn('  Partner nem található a PARTNEREK fülön: ' + adoszam);
+    return null;
+  } catch (e) {
+    console.error('_getPartnerEmail_ hiba: ' + e.message);
+    return null;
+  }
+}
+
+/**
+ * Visszautasítás email küldése a partnernek.
+ *
+ * TEST_MODE = true  → email az ADMIN_EMAIL-re megy (nem a valódi partnernek)
+ * TEST_MODE = false → email a partner PARTNEREK.E oszlopában lévő cimre megy;
+ *                     ha nincs partner email, fallback → ADMIN_EMAIL + figyelmeztetés
+ *
+ * @param {string} adoszam          - Szállító adószáma (PARTNEREK lookup kulcsa)
+ * @param {string} szallitoNev      - Szállító neve (levéltörzsbe kerül)
+ * @param {string} szamlaszam       - Számla sorszáma (tárgy + levéltörzs)
+ * @param {string} visszautasitasOka- T oszlop értéke (opcionális — üres string ha nincs)
+ */
+function _sendRejectionEmailToPartner_(adoszam, szallitoNev, szamlaszam, visszautasitasOka) {
+  const partnerEmail = _getPartnerEmail_(adoszam);
+
+  // TEST_MODE: mindig ADMIN_EMAIL-re megy, a valódi cím a logban látható
+  const toEmail = CONFIG.TEST_MODE
+    ? CONFIG.ADMIN_EMAIL
+    : (partnerEmail || CONFIG.ADMIN_EMAIL);
+
+  if (!toEmail) {
+    console.warn('Visszautasítás email: nincs elérhető célcím — email nem küldve.');
+    return;
+  }
+
+  const subject = '[Armadillo] Számla visszautasítva — ' + szamlaszam;
+  const body =
+    'Tisztelt ' + (szallitoNev || 'Partnerünk') + '!\n\n' +
+    'A(z) ' + szamlaszam + ' számú számlájának befogadását visszautasítottuk.\n' +
+    (visszautasitasOka
+      ? '\nVisszautasítás oka:\n' + visszautasitasOka + '\n'
+      : '') +
+    '\nKérjük, javított számlát küldjön, vagy vegye fel velünk a kapcsolatot.\n\n' +
+    'Üdvözlettel,\n' +
+    'Armadillo Kft.\n' +
+    'penzugy@armadillo.hu';
+
+  GmailApp.sendEmail(toEmail, subject, body);
+  console.log('✅ Visszautasítás email elküldve → ' + toEmail +
+    (CONFIG.TEST_MODE
+      ? ' [TEST_MODE — valódi partner email: ' + (partnerEmail || 'nincs a PARTNEREK fülön') + ']'
+      : ''));
+}
+
+/**
+ * PDF fájl áthelyezése a Visszautasított Drive mappába.
+ * Eltávolítja a fájlt az eredeti (Bejövő) mappából is.
+ * Hibatűrő: ha a REJECTED_FOLDER_ID nincs beállítva, csak logol — nem dob kivételt.
+ *
+ * @param {string} fileId - Drive fájl ID (BEJÖVŐ_SZÁMLÁK M oszlop)
+ */
+function _movePdfToRejectedFolder_(fileId) {
+  if (!CONFIG.REJECTED_FOLDER_ID) {
+    console.warn('REJECTED_FOLDER_ID nincs beállítva a Configban — PDF nem helyezhető át.');
+    return;
+  }
+  const file           = DriveApp.getFileById(fileId);
+  const rejectedFolder = DriveApp.getFolderById(CONFIG.REJECTED_FOLDER_ID);
+
+  // Jelenlegi szülő mappák lekérése AZ ÁTHELYEZÉS ELŐTT
+  // (Drive API: getParents() iterator, moveFile() szintaxis GAS-ban nem mindig stabil)
+  const parentIds = [];
+  const parents   = file.getParents();
+  while (parents.hasNext()) {
+    parentIds.push(parents.next().getId());
+  }
+
+  // Hozzáad az új (Visszautasított) mappához
+  rejectedFolder.addFile(file);
+
+  // Eltávolít minden korábbi szülőből (a Visszautasított mappát kivéve)
+  parentIds.forEach(function(pid) {
+    if (pid !== CONFIG.REJECTED_FOLDER_ID) {
+      try {
+        DriveApp.getFolderById(pid).removeFile(file);
+      } catch (e) {
+        console.warn('  Régi mappa eltávolítás sikertelen (' + pid + '): ' + e.message);
+      }
+    }
+  });
+
+  console.log('✅ PDF áthelyezve → Visszautasított mappa: "' + file.getName() + '"');
 }
