@@ -294,17 +294,17 @@ T('Task 14','Fázis 1','Integráció és élesítés',
 // ── FÁZIS 2 ───────────────────────────────────────────────────────────────────
 T('Task 21','Fázis 2','HIÁNYOS_PO logika validálása',
   'HIÁNYOS_PO routing és ÁLLANDÓ bypass staging-en részletesen tesztelve (logika Fázis 1 scriptekben implementálva, itt végleges validálás)',
-  'Fejlesztő',false,false,true,false,true,'2026. 04. 16.',
+  'Fejlesztő',false,false,true,false,false,null,
   '✓ ÁLLANDÓ kategóriájú számla: PO_SUMMARY=N/A, Q=BEÉRKEZETT — SOHA nem HIÁNYOS_PO<br>✓ PROJEKT + minden tétel PO_VALIDÁLT=IGEN → BEÉRKEZETT<br>✓ PROJEKT + 1 tétel PO_VALIDÁLT=NEM (conf=94, tehát <95) → HIÁNYOS_PO<br>✓ PROJEKT + 1 tétel nem szerepel PROJEKTEK-ben → HIÁNYOS_PO<br>✓ Az ÁLLANDÓ bypass az első ág — ha M=ÁLLANDÓ, a PROJEKT logika le sem fut'),
 T('Task 22','Fázis 2','Visszautasító email sablon (Ági)',
   'Visszautasító email sablon szövege megírva és fejlesztőnek átadva: mi hiányzott, hogyan küldjék újra helyesen, kivel vegyék fel a kapcsolatot — változók {SZÁLLÍTÓ_NEVE}, {SZÁMLA_SZÁMA} formában jelölve',
   'Ági',false,false,false,false,false,null),
 T('Task 23','Fázis 2','Visszautasító email sablon (Ági)',
-  'Triggers.gs bővítve: visszautasítás email partnernek (PARTNEREK.E adószám alapján), PDF áthelyezés Visszautasított mappába, TEST_MODE-ban ADMIN_EMAIL-re megy — testTask24DirectRejection() tesztsegéd is implementálva',
-  'Fejlesztő',false,true,false,false,true,'2026. 04. 16.'),
+  'Triggers.gs bővítve: VISSZAUTASÍTVA → visszautasítás email (PARTNEREK.E, adószám alapján), PDF áthelyezés Visszautasított mappába — TEST_MODE-ban ADMIN_EMAIL-re megy',
+  'Fejlesztő',false,true,false,false,false,null),
 T('Task 24','Fázis 2','Visszautasítás teszt (Ági + Fejlesztő)',
   'Visszautasítás end-to-end teszt: HIÁNYOS_PO státuszú staging sor P oszlopa kézzel VISSZAUTASÍTVA-ra állítva',
-  'Ági + Fejlesztő',false,false,true,false,true,'2026. 04. 16.',
+  'Ági + Fejlesztő',false,false,true,false,false,null,
   '✓ Email megérkezett a partner email-jére (tesztnél saját email is megfelel)<br>✓ Sablon szöveg helyes, {SZÁLLÍTÓ_NEVE} és {SZÁMLA_SZÁMA} be van helyettesítve<br>✓ Partner email a PARTNEREK fülről jön (E oszlop) — nem hardcode-olt<br>✓ AI_HIBA szimuláció (Gemini key szimuláltan rossz): AI_HIBA státusz megjelent, admin email megérkezett autobot@-ra<br>✓ Chat webhook szimuláltan hibás: Gmail fallback aktiválódott, autobot@-ra megérkezett'),
 
 // ── FÁZIS 3 ───────────────────────────────────────────────────────────────────
@@ -415,43 +415,30 @@ createApp({
         getTasksByGroup(group) { return this.currentPhaseTasks.filter(t=>t.group===group); },
         getOwnerClass(owner) { return OWNER_CLASSES[owner]||'bg-slate-100 text-slate-600 border-slate-200'; },
         toggleTask(task) { task.timestamp=task.done?new Date().toLocaleString('hu-HU'):null; this.saveData(); },
-        saveData() { localStorage.setItem('armadilloTrackerV10',JSON.stringify(this.tasks)); },
+        saveData() { localStorage.setItem('armadilloTrackerV8',JSON.stringify(this.tasks)); },
         loadData() {
-            // V10: friss adat
-            const s10=localStorage.getItem('armadilloTrackerV10');
-            if(s10){ this.tasks=JSON.parse(s10); return; }
-            // Migráció V4–V9→V10: pipák megmaradnak, title+testDesc az új initialTasks-ból jön.
-            // FONTOS: ha initialTasks-ban done=true (fejlesztő zárta le), azt MEGTARTJUK — a régi
-            // false érték nem írhatja felül a kódban rögzített készállapotot.
-            const s9=localStorage.getItem('armadilloTrackerV9');
+            // V8: friss adat
             const s8=localStorage.getItem('armadilloTrackerV8');
+            if(s8){ this.tasks=JSON.parse(s8); return; }
+            // Migráció V4/V5/V6/V7→V8: pipák megmaradnak, title+testDesc az új initialTasks-ból jön
+            // (új feladatok done=false-szal kerülnek be, meglévők megőrzik állapotukat)
             const s7=localStorage.getItem('armadilloTrackerV7');
             const s6=localStorage.getItem('armadilloTrackerV6');
             const s5=localStorage.getItem('armadilloTrackerV5');
             const s4=localStorage.getItem('armadilloTrackerV4');
-            const sOld = s9 || s8 || s7 || s6 || s5 || s4;
+            const sOld = s7 || s6 || s5 || s4;
             if(sOld){
                 const old=JSON.parse(sOld);
                 const oldMap={};
                 old.forEach(t=>{ oldMap[t.id]={done:t.done,timestamp:t.timestamp}; });
                 this.tasks=JSON.parse(JSON.stringify(initialTasks)).map(t=>{
-                    const initDone = initialTasks.find(it=>it.id===t.id)?.done || false;
-                    if(oldMap[t.id]){
-                        // Ha a kódban done=true → mindig kész (fejlesztő confirmed)
-                        // Ha a kódban done=false → a felhasználó korábbi állapotát tartjuk meg
-                        t.done = initDone || oldMap[t.id].done;
-                        t.timestamp = t.done
-                            ? (oldMap[t.id].timestamp || initialTasks.find(it=>it.id===t.id)?.timestamp || new Date().toLocaleString('hu-HU'))
-                            : null;
-                    }
+                    if(oldMap[t.id]){ t.done=oldMap[t.id].done; t.timestamp=oldMap[t.id].timestamp; }
                     return t;
                 });
                 localStorage.removeItem('armadilloTrackerV4');
                 localStorage.removeItem('armadilloTrackerV5');
                 localStorage.removeItem('armadilloTrackerV6');
                 localStorage.removeItem('armadilloTrackerV7');
-                localStorage.removeItem('armadilloTrackerV8');
-                localStorage.removeItem('armadilloTrackerV9');
                 this.saveData();
                 return;
             }
@@ -464,8 +451,6 @@ createApp({
                 localStorage.removeItem('armadilloTrackerV6');
                 localStorage.removeItem('armadilloTrackerV7');
                 localStorage.removeItem('armadilloTrackerV8');
-                localStorage.removeItem('armadilloTrackerV9');
-                localStorage.removeItem('armadilloTrackerV10');
                 this.tasks=JSON.parse(JSON.stringify(initialTasks));
                 this.saveData();
             }
