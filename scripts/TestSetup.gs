@@ -289,6 +289,7 @@ function processInvoiceById() {
 
   if (result === 'OK') {
     message.markRead();
+    _applyProcessedLabel_(message); // Gmail label: "Armadillo/Feldolgozva"
     console.log('✅ Feldolgozás sikeres! Ellenőrizd:');
     console.log('   • Drive: Bejövő számlák TEST / 2026 / 04_Április /');
     console.log('   • BEJÖVŐ_SZÁMLÁK: legújabb sor (N/O/P/Q/W kitöltve)');

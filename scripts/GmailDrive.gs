@@ -71,6 +71,7 @@ function processNewInvoices() {
           skipped++;
         } else if (result === 'OK') {
           message.markRead();
+          _applyProcessedLabel_(message); // Gmail label: "Armadillo/Feldolgozva"
           processedIds.add(msgId); // cache frissítés
           processed++;
         } else if (result === 'DRIVE_ERROR') {
@@ -293,6 +294,31 @@ function _sanitizeFilename_(subject) {
     .replace(/^_|_$/g, '')              // kezdő/záró _ törlése
     .substring(0, 50)
     || 'szamla';                        // ha teljesen üres marad
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GMAIL LABEL
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * "Armadillo/Feldolgozva" label-t alkalmaz a feldolgozott emailre.
+ * Emberek számára is látható: Gmail-ben az email szálhoz hozzárendelt label.
+ * TEST_MODE-ban "[TEST] Armadillo/Feldolgozva" label kerül rá.
+ * Ha a label nem létezik: automatikusan létrehozza.
+ * Hiba esetén csak logol — ne törje el a feldolgozást.
+ *
+ * @param {GmailMessage} message
+ */
+function _applyProcessedLabel_(message) {
+  try {
+    const labelName = (CONFIG.TEST_MODE ? '[TEST] ' : '') + 'Armadillo/Feldolgozva';
+    let label = GmailApp.getUserLabelByName(labelName);
+    if (!label) label = GmailApp.createLabel(labelName);
+    label.addToThread(message.getThread());
+    console.log('  → Gmail label alkalmazva: "' + labelName + '"');
+  } catch (e) {
+    console.warn('  → Gmail label sikertelen (nem kritikus): ' + e.message);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
