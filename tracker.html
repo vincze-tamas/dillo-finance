@@ -382,6 +382,41 @@ T('Task 54','Fázis 5','Élesítési ellenőrzőlista',
   '✓ Szerda 9:00: OPS Chat-en PROJEKT számlák digestje megérkezett ✓, Finance Chat-en ÁLLANDÓ számlák digestje megérkezett ✓<br>✓ Szerda 14:00: BATCH-*.txt megjelent a Kötegek/2026/ mappában, Finance Chat-en Drive link megérkezett Péternek<br>✓ Péter megerősíti: a fájl feltölthető volt MagNet-be éles adattal és az összegek helyesek<br>✓ Fejlesztő elérhető volt az első szerdán — ha volt hiba, azonnali javítás megtörtént'),
 ];
 
+// Audit log (2026-04-16) alapján visszaállított pipák — V13 fresh install-hoz
+const _SAVED_STATE_ = {
+    'F0-S0a':        {done:true, timestamp:'2026. 04. 11. 12:35:41'},
+    'F0-S0b':        {done:true, timestamp:'2026. 04. 13. 22:07:22'},
+    'F0-S1a':        {done:true, timestamp:'2026. 04. 13. 22:08:08'},
+    'F0-S1b':        {done:true, timestamp:'2026. 04. 13. 22:49:14'},
+    'F0-S2a':        {done:true, timestamp:'2026. 04. 13. 22:08:13'},
+    'F0-S2b':        {done:true, timestamp:'2026. 04. 13. 22:50:11'},
+    'F0-S2c':        {done:true, timestamp:'2026. 04. 14. 14:04:26'},
+    'F0-S3a':        {done:true, timestamp:'2026. 04. 13. 22:08:15'},
+    'F0-S3b':        {done:true, timestamp:'2026. 04. 14. 14:05:44'},
+    'F0-S4a':        {done:true, timestamp:'2026. 04. 13. 22:08:17'},
+    'F0-S4b':        {done:true, timestamp:'2026. 04. 14. 20:33:53'},
+    'F0-AuditLog-a': {done:true, timestamp:'2026. 04. 14. 22:48:08'},
+    'F0-AuditLog-b': {done:true, timestamp:'2026. 04. 14. 23:57:35'},
+    'Task 03':       {done:true, timestamp:'2026. 04. 14. 13:53:41'},
+    'F1-S1a':        {done:true, timestamp:'2026. 04. 13. 22:08:26'},
+    'F1-S1b':        {done:true, timestamp:'2026. 04. 15. 23:34:55'},
+    'F1-S2a':        {done:true, timestamp:'2026. 04. 13. 22:08:28'},
+    'F1-S2b':        {done:true, timestamp:'2026. 04. 15. 23:34:52'},
+    'F1-S3a':        {done:true, timestamp:'2026. 04. 13. 22:08:30'},
+    'F1-S3b':        {done:true, timestamp:'2026. 04. 15. 22:12:16'},
+    'F1-S4a':        {done:true, timestamp:'2026. 04. 13. 22:08:32'},
+    'F1-S4b':        {done:true, timestamp:'2026. 04. 15. 21:54:19'},
+    'Task 12':       {done:true, timestamp:'2026. 04. 15. 23:35:47'},
+    'Task 21':       {done:true, timestamp:'2026. 04. 16. 10:30:30'},
+    'Task 23':       {done:true, timestamp:'2026. 04. 16.'},
+    'Task 24':       {done:true, timestamp:'2026. 04. 16. 11:52:26'},
+    'F3-S1a':        {done:true, timestamp:'2026. 04. 13. 22:09:07'},
+    'F3-S1b':        {done:true, timestamp:'2026. 04. 16. 14:19:10'},
+    'F3-S2a':        {done:true, timestamp:'2026. 04. 13. 22:09:10'},
+    'F3-S2b':        {done:true, timestamp:'2026. 04. 16. 14:28:43'},
+    'Task 32':       {done:true, timestamp:'2026. 04. 16. 14:59:27'},
+};
+
 createApp({
     data() { return { tasks:[], activePhase:'PRE-0', phases:PHASES }; },
     computed: {
@@ -415,12 +450,18 @@ createApp({
         getTasksByGroup(group) { return this.currentPhaseTasks.filter(t=>t.group===group); },
         getOwnerClass(owner) { return OWNER_CLASSES[owner]||'bg-slate-100 text-slate-600 border-slate-200'; },
         toggleTask(task) { task.timestamp=task.done?new Date().toLocaleString('hu-HU'):null; this.saveData(); },
-        saveData() { localStorage.setItem('armadilloTrackerV12',JSON.stringify(this.tasks)); },
+        saveData() { localStorage.setItem('armadilloTrackerV13',JSON.stringify(this.tasks)); },
+        _applyState_(base, stateMap) {
+            return JSON.parse(JSON.stringify(base)).map(t=>{
+                if(stateMap[t.id]){ t.done=stateMap[t.id].done; t.timestamp=stateMap[t.id].timestamp; }
+                return t;
+            });
+        },
         loadData() {
-            // V12: friss adat
-            const s12=localStorage.getItem('armadilloTrackerV12');
-            if(s12){ this.tasks=JSON.parse(s12); return; }
-            // Migráció bármely régi verzióból (V4–V11) — a legjobb/legújabb adatot veszi
+            // V13: friss adat
+            const s13=localStorage.getItem('armadilloTrackerV13');
+            if(s13){ this.tasks=JSON.parse(s13); return; }
+            // Migráció V11-ből (V12 kihagyva — hibás migráció volt)
             const keys=['armadilloTrackerV11','armadilloTrackerV10','armadilloTrackerV9','armadilloTrackerV8',
                         'armadilloTrackerV7','armadilloTrackerV6','armadilloTrackerV5','armadilloTrackerV4'];
             let sOld=null;
@@ -429,21 +470,20 @@ createApp({
                 const old=JSON.parse(sOld);
                 const oldMap={};
                 old.forEach(t=>{ oldMap[t.id]={done:t.done,timestamp:t.timestamp}; });
-                this.tasks=JSON.parse(JSON.stringify(initialTasks)).map(t=>{
-                    if(oldMap[t.id]){ t.done=oldMap[t.id].done; t.timestamp=oldMap[t.id].timestamp; }
-                    return t;
-                });
+                this.tasks=this._applyState_(initialTasks, oldMap);
                 keys.forEach(k=>localStorage.removeItem(k));
                 this.saveData();
                 return;
             }
-            this.tasks=JSON.parse(JSON.stringify(initialTasks));
+            // Nincs mentett adat → _SAVED_STATE_ (2026-04-16 audit log) alapján tölt be
+            this.tasks=this._applyState_(initialTasks, _SAVED_STATE_);
+            this.saveData();
         },
         resetData() {
             if(confirm('Biztosan törlöd az összes pipát?')){
                 ['armadilloTrackerV4','armadilloTrackerV5','armadilloTrackerV6','armadilloTrackerV7',
                  'armadilloTrackerV8','armadilloTrackerV9','armadilloTrackerV10','armadilloTrackerV11',
-                 'armadilloTrackerV12']
+                 'armadilloTrackerV12','armadilloTrackerV13']
                 .forEach(k=>localStorage.removeItem(k));
                 this.tasks=JSON.parse(JSON.stringify(initialTasks));
                 this.saveData();
