@@ -184,12 +184,12 @@ T('F0-S0b','Fázis 0','TestSetup.gs — Teszt környezet',
   '✓ autobot@ My Drive-ban megjelent: "🧪 Armadillo TEST" mappa<br>✓ Almappák létrejöttek: "Bejövő számlák TEST/", "Kötegek TEST/", "Visszautasított TEST/"<br>✓ "[TEST] Armadillo Pénzügyi Adatbázis" Google Sheet létrejött<br>✓ Apps Script konzolban látható: staging sheet ID + 3 mappa ID → ezeket Config.gs-be kell másolni'),
 
 T('F0-S1a','Fázis 0','Config.gs',
-  'Config.gs megírva: TEST_MODE flag, staging/éles ID párok (spreadsheet, 3 Drive mappa), 3 webhook URL placeholder, küszöbértékek (PO_CONFIDENCE_THRESHOLD: 95), Gemini key PropertiesService wrapper',
+  'Config.gs megírva: TEST_MODE flag, staging/éles ID párok (spreadsheet, 3 Drive mappa), 3 webhook URL (OPS/Finance/Admin — TEST_MODE-ban PropertiesService CHAT_WEBHOOK_TEST-ből), küszöbértékek (PO_CONFIDENCE_THRESHOLD: 95), BATCH_AMOUNT_UNIT: "HUF" (P11 validálás után véglegesíthető FILLER-re), GEMINI_MODEL: "gemini-2.5-flash", Gemini key PropertiesService wrapper, _assertProductionConfig_() éles indítás előtti guard',
   'Fejlesztő',false,true,false,false,false,null),
 T('F0-S1b','Fázis 0','Config.gs',
   'Config.gs tesztelve: staging ID-k beírva TestSetup konzol outputjából, TEST_MODE=true, Gemini key PropertiesService-be mentve',
   'Te',false,false,true,false,false,null,
-  'Apps Script konzolban futtatni: <code>logConfig()</code><br>✓ TEST_MODE: true<br>✓ SPREADSHEET_ID: staging sheet ID (nem üres string)<br>✓ Mind a 3 FOLDER_ID kitöltve<br>✓ Gemini key beállítva: Script Editor → Project Settings → Script Properties → GEMINI_API_KEY<br>✓ Ellenőrzés: <code>PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY")</code> → nem null<br>✓ logConfig() konzol outputban: "✅ Minden kritikus mező be van állítva."'),
+  'Apps Script konzolban futtatni: <code>logConfig()</code><br>✓ TEST_MODE: true<br>✓ SPREADSHEET_ID: staging sheet ID (nem üres string)<br>✓ Mind a 3 FOLDER_ID kitöltve<br>✓ Gemini key beállítva: Script Editor → Project Settings → Script Properties → GEMINI_API_KEY<br>✓ TEST Chat webhook: Script Properties → CHAT_WEBHOOK_TEST = teszt Chat space webhook URL<br>✓ Ellenőrzés: <code>PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY")</code> → nem null<br>✓ BATCH_AMOUNT_UNIT: "HUF" látható logConfig() outputban<br>✓ GEMINI_MODEL: "gemini-2.5-flash" (vagy aktuális modell) látható logConfig() outputban<br>✓ logConfig() konzol outputban: "✅ Minden kritikus mező be van állítva."<br>⚠️ Éles módban: <code>_assertProductionConfig_()</code> dob kivételt ha SPREADSHEET_ID / FOLDER_ID-k / CHAT_WEBHOOK_ADMIN üres'),
 
 T('F0-S2a','Fázis 0','Utils.gs',
   'Utils.gs megírva: withRetry(fn, maxAttempts, delayMs) exponenciális backoffal, getNextWorkday(date) CONFIG VERIFIED sorokból, notifyAdmin(subject, body), LockService wrapper',
@@ -217,7 +217,7 @@ T('F0-S3c','Fázis 0','Setup.gs',
   '✓ Régi sheet HTML exportok megvannak backup-ként<br>✓ Régi sheet átnevezve "[ARCHÍV] Armadillo Pénzügyi Adatbázis"-ra vagy törölve<br>✓ Éles sheet az autobot@ Shared Drive → SSOT/ mappájában van (nem My Drive-ban)<br>✓ Péter és Ági meg tudják nyitni a sheet-et'),
 
 T('F0-S4a','Fázis 0','Validation.gs',
-  'Validation.gs megírva: onEditInstallable() — 8-lépéses architektúra: (1) AUDIT_LOG-ra írási kísérlet → blokk + AUDITNAPLO_SZERKESZTESI_KISERLET audit, (2) üzleti fül szűrő (8 fül figyelt: BEJÖVŐ_SZÁMLÁK, SZÁMLA_TÉTELEK, PROJEKTEK, PARTNEREK, KÖTEGEK, KIMENŐ_SZÁMLÁK, CONFIG, ALLOKÁCIÓK), (3) tömeges szerkesztés kizárás, (4) no-op kizárás (e.oldValue===e.value), (5) fejléc sor kizárás, (6) KOTEG_ID readonly guard (visszaállítás + KOTEG_ID_FELULIRAS_KISERLET audit + notifyAdmin), (7) univerzális logAudit_() minden szerkesztésre (entitás lazy init map alapján), (8) validáció-routing: JÓVÁHAGYÓ auto-kitöltés, J oszlop FK piros kiemelés, PO_VALIDÁLT M újraszámítás — tiltott státusz átmenet (STATUSZ_ATMENETEK_ state machine): visszaállítás + alert, audit: STATUSZ_TILTOTT_ATMENET',
+  'Validation.gs megírva: onEditInstallable() — 8-lépéses architektúra: (1) AUDIT_LOG-ra írási kísérlet → blokk + AUDITNAPLO_SZERKESZTESI_KISERLET audit, (2) üzleti fül szűrő (8 fül figyelt: BEJÖVŐ_SZÁMLÁK, SZÁMLA_TÉTELEK, PROJEKTEK, PARTNEREK, KÖTEGEK, KIMENŐ_SZÁMLÁK, CONFIG, ALLOKÁCIÓK), (3) tömeges szerkesztés kizárás, (4) no-op kizárás (e.oldValue===e.value), (5) fejléc sor kizárás, (6) KOTEG_ID readonly guard (visszaállítás + KOTEG_ID_FELULIRAS_KISERLET audit + notifyAdmin), (7) univerzális logAudit_() minden szerkesztésre (entitás lazy init map alapján), (8) validáció-routing: JÓVÁHAGYÓ auto-kitöltés, J oszlop FK piros kiemelés, PO_VALIDÁLT M újraszámítás (_getBejovoszamlaKategoria_() cross-sheet lookup: ÁLLANDÓ/MEGOSZTOTT → M=N/A) — tiltott státusz átmenet (STATUSZ_ATMENETEK_ state machine): visszaállítás + alert, audit: STATUSZ_TILTOTT_ATMENET',
   'Fejlesztő',false,true,false,false,false,null),
 T('F0-S4b','Fázis 0','Validation.gs',
   'Validation.gs tesztelve staging sheeten: installable onEdit trigger létrehozva autobot@ fiókból',
@@ -260,7 +260,7 @@ T('F1-S2b','Fázis 1','GeminiOCR.gs',
   '✓ testAggregatePO() futtatva: konzolban minden eset ✓ jellel zárul<br>✓ Egyetlen PO azonosítva → PO_SUMMARY = konkrét PO érték, aggregált PO_CONFIDENCE = az adott tétel értéke<br>✓ Több különböző PO a tételekben → PO_SUMMARY = "MULTI", PO_CONFIDENCE = MIN(tételek conf.)<br>✓ Legalább 1 tétel nem azonosítható → PO_SUMMARY = "HIÁNYOS", PO_CONFIDENCE = 0, PO_REASONING = "NINCS_PO"<br>✓ ÁLLANDÓ kategóriájú partner számlája → PO_SUMMARY = "N/A", PO ellenőrzés teljesen kihagyva<br>✓ MEGOSZTOTT kategóriájú partner számlája → PO_SUMMARY = "N/A", ugyanúgy kihagyva<br>✓ previewPrompt() konzolban megjeleníti a Gemini promptot — PROJEKTEK lista szerepel benne<br>✓ Gemini key szimuláltan hibás (rossz key beállítva) → withRetry 3× próbál, majd AI_HIBA státusz, notifyAdmin() email megérkezett'),
 
 T('F1-S3a','Fázis 1','SheetWriter.gs',
-  'SheetWriter.gs megírva: writeInvoiceToSheet() + writeInvoiceError() — LockService tranzakcióban BEJÖVŐ_SZÁMLÁK appendRow + SZÁMLA_TÉTELEK appendRow atomikusan, PO_VALIDÁLT kiszámítása soronként (J∈PROJEKTEK.A AND K≥95 → IGEN, ÁLLANDÓ/MEGOSZTOTT → N/A), INVOICE_RECEIVED + INVOICE_ERROR logAuditScript_() a lockon KÍVÜL hívva',
+  'SheetWriter.gs megírva: writeInvoiceToSheet() + writeInvoiceError() — LockService tranzakcióban BEJÖVŐ_SZÁMLÁK + SZÁMLA_TÉTELEK atomikus batch setValues() (NEM appendRow loop — API kvóta-hatékony, egyszerre ír minden tétel sort), PO_VALIDÁLT kiszámítása soronként (J∈PROJEKTEK.A AND K≥95 → IGEN, ÁLLANDÓ/MEGOSZTOTT → N/A), INVOICE_RECEIVED + INVOICE_ERROR logAuditScript_() a lockon KÍVÜL hívva',
   'Fejlesztő',false,true,false,false,false,null),
 T('F1-S3b','Fázis 1','SheetWriter.gs',
   'SheetWriter.gs tesztelve staging sheeten: writeTestInvoice() és writeTestError() futtatva',
@@ -268,12 +268,12 @@ T('F1-S3b','Fázis 1','SheetWriter.gs',
   '✓ writeTestInvoice() futtatva → BEJÖVŐ_SZÁMLÁK-ban új sor keletkezett: N=PO_SUMMARY helyes érték, O=aggregált PO_CONFIDENCE szám, P=aggregált PO_REASONING, Q=Státusz (BEÉRKEZETT vagy HIÁNYOS_PO)<br>✓ SZÁMLA_TÉTELEK-ben tételsorok: J=projektszám, K=po_confidence, L=po_reasoning, M=PO_VALIDÁLT (IGEN/NEM/N/A)<br>✓ PO_VALIDÁLT=IGEN feltétel: J∈PROJEKTEK.A ÉS K≥95 — mindkét feltétel egyszerre kell<br>✓ PO_VALIDÁLT=NEM: ha J nincs a PROJEKTEK-ben VAGY K<95 (akár 94)<br>✓ PO_VALIDÁLT=N/A: ÁLLANDÓ vagy MEGOSZTOTT kategóriájú partner<br>✓ writeTestError() futtatva → BEJÖVŐ_SZÁMLÁK-ban hibasor keletkezett helyes státuszkóddal<br>✓ Lock timeout szimulálva: ha lock nem szerezhető 10 mp-en belül → LOCK_TIMEOUT státusz, BEJÖVŐ_SZÁMLÁK-ban nincs félig beírt sor'),
 
 T('F1-S4a','Fázis 1','ChatNotifier.gs',
-  'ChatNotifier.gs megírva: sendToOps(), sendToFinance(), sendToAdmin() — 3 különálló webhook, HIÁNYOS_PO tétel-szintű payload formázás (sor N: "leírás" → PO: X | Conf: Y% | reasoning), Gmail fallback ha webhook hiba, TEST_MODE=true → minden üzenet Admin webhook-ra megy',
+  'ChatNotifier.gs megírva: sendToOps(), sendToFinance(), sendToAdmin() — 3 különálló webhook; notifyOpsDigest(projektRows, hianyosRows, utalasDate) — BEÉRKEZETT PROJEKT számlák + HIÁNYOS_PO tétel-szintű payload → OPS space (Ági+Márk); notifyWednesdayDigest(pendingRows, utalasDate, allandoRows) — ÁLLANDÓ BEÉRKEZETT + JÓVÁHAGYVA összesítő → Finance space (Péter); HIÁNYOS_PO payload formátum: sor N: "leírás" → PO: X | Conf: Y% | reasoning; Gmail fallback ha webhook hiba; TEST_MODE=true → minden üzenet Admin webhook-ra megy',
   'Fejlesztő',false,true,false,false,false,null),
 T('F1-S4b','Fázis 1','ChatNotifier.gs',
   'ChatNotifier.gs tesztelve: testAllNotifications() futtatva',
   'Te',false,false,true,false,false,null,
-  '✓ TEST_MODE=true: minden üzenet az Admin Chat space-be érkezett (NEM az OPS vagy Finance space-be)<br>✓ Teszt HIÁNYOS_PO payload formátum ellenőrzése a kapott üzenetben:<br>&nbsp;&nbsp;⚠️ HIÁNYOS_PO: [Szállító neve] — [Összeg]<br>&nbsp;&nbsp;&nbsp;&nbsp;sor 1: "Tétel leírás" → PO: FCA2601 | Conf: 42% | Nem azonosítható<br>✓ Webhook hiba szimulálva (rossz URL beírva Config.gs-be): Gmail fallback küldött emailt autobot@-ra<br>✓ TEST_MODE=false beállítva: OPS webhook-ra megy az OPS üzenet, Finance-ra a Finance üzenet — ellenőrizni mindkét Chat space-ben'),
+  '✓ TEST_MODE=true: minden üzenet az Admin Chat space-be érkezett (NEM az OPS vagy Finance space-be)<br>✓ Teszt HIÁNYOS_PO payload formátum ellenőrzése a kapott üzenetben:<br>&nbsp;&nbsp;⚠️ HIÁNYOS_PO: [Szállító neve] — [Összeg]<br>&nbsp;&nbsp;&nbsp;&nbsp;sor 1: "Tétel leírás" → PO: FCA2601 | Conf: 42% | Nem azonosítható<br>✓ Webhook hiba szimulálva (rossz URL beírva Config.gs-be): Gmail fallback küldött emailt autobot@-ra<br>✓ TEST_MODE=false beállítva: OPS webhook-ra megy az OPS üzenet, Finance-ra a Finance üzenet — ellenőrizni mindkét Chat space-ben<br>⚠️ TEST_MODE-ban mind a 3 webhook azonos Chat space-re mutat → testAllNotifications() 7+ üzenete gyors egymás után → HTTP 429 RESOURCE_EXHAUSTED várható az utolsó üzeneteknél, Gmail fallback aktiválódik (ez helyes viselkedés, nem bug)'),
 
 T('Task 11','Fázis 1','Integráció és élesítés',
   '15 perces time-driven trigger létrehozva autobot@ fiókból: Apps Script → Triggers (⏰) → + Add Trigger → processNewInvoices → Time-driven → Minutes timer → Every 15 minutes',
@@ -309,25 +309,25 @@ T('Task 24','Fázis 2','Visszautasítás teszt (Ági + Fejlesztő)',
 
 // ── FÁZIS 3 ───────────────────────────────────────────────────────────────────
 T('F3-S1a','Fázis 3','WednesdayWorkflow.gs',
-  'WednesdayWorkflow.gs megírva: wednesdayMorningDigest() — BEÉRKEZETT+HIÁNYOS_PO lekérdezés, PROJEKT→OPS webhook, ÁLLANDÓ→Finance webhook, HIÁNYOS_PO tétel-szintű payload, 7 napon belül lejáró kiemelés; wednesdayAfternoonBatch() — JÓVÁHAGYVA számlák összegyűjtése, devizánként csoportosítás, BatchGenerator hívás',
+  'WednesdayWorkflow.gs megírva: wednesdayMorningDigest() — _assertProductionConfig_() + _loadBeerkzetRows_(PROJEKT) → notifyOpsDigest() (OPS Chat: PROJEKT számlák + HIÁNYOS_PO tétel-szintű bontás) + _loadBeerkzetRows_(ÁLLANDÓ) → notifyWednesdayDigest() (Finance Chat: ÁLLANDÓ + JÓVÁHAGYVA összesítő, 7 napon belül lejáró kiemelés); wednesdayAfternoonBatch() — _assertProductionConfig_() + JÓVÁHAGYVA számlák összegyűjtése, devizánként csoportosítás, BatchGenerator hívás; checkOverdueKotegek() — JÓVÁHAGYVA + KOTEG_ID nem üres + utalás dátuma >3 nap múlt → Finance Chat figyelmeztetés (dátum-mutáció bug javítva)',
   'Fejlesztő',false,true,false,false,false,null),
 T('F3-S1b','Fázis 3','WednesdayWorkflow.gs',
   'WednesdayWorkflow.gs tesztelve: runDigestNow() és runBatchNow() kézzel futtatva staging sheeten (előtte BEÉRKEZETT/HIÁNYOS_PO és JÓVÁHAGYVA státuszú teszt sorok felvitele)',
   'Te',false,false,true,false,false,null,
-  '✓ runDigestNow() futtatva → TEST_MODE-ban Admin Chat-en digest üzenet megérkezett<br>✓ PROJEKT kategória tételek → OPS szekció szerepel az üzenetben (Ági+Márk számára)<br>✓ ÁLLANDÓ kategória tételek → Finance szekció szerepel (Péter számára)<br>✓ HIÁNYOS_PO tételek tétel-szintű bontással a digest-ben (sor 1: "leírás" → PO: X | Conf: Y% | reasoning)<br>✓ Fizetési határidő < 7 nap: tétel kiemelten jelenik meg<br>✓ runBatchNow() futtatva → teszt JÓVÁHAGYVA sor → BatchGenerator meghívódik<br>✓ testDigestDayLogic() futtatva → szerdai nap detektálás helyesen működik'),
+  '✓ runDigestNow() futtatva → TEST_MODE-ban Admin Chat-en 2 üzenet érkezett: (1) OPS digest + (2) Finance digest<br>✓ OPS digest: PROJEKT kategóriájú BEÉRKEZETT számlák + HIÁNYOS_PO tételek tétel-szintű bontással (sor 1: "leírás" → PO: X | Conf: Y% | reasoning) — Ági+Márk számára<br>✓ Finance digest: ÁLLANDÓ BEÉRKEZETT számlák + JÓVÁHAGYVA összesítő — Péter számára<br>✓ Fizetési határidő < 7 nap: tétel kiemelten jelenik meg mindkét digestben<br>✓ runBatchNow() futtatva → teszt JÓVÁHAGYVA sor → BatchGenerator meghívódik<br>✓ testDigestDayLogic() futtatva → szerdai nap detektálás helyesen működik<br>⚠️ TEST_MODE 429 hiba várható a 2. üzenetnél ha az Admin space rövid időn belül kap kettőt — Gmail fallback aktiválódik, ez helyes'),
 
 T('F3-S2a','Fázis 3','BatchGenerator.gs',
-  'BatchGenerator.gs megírva: generateHUFBatch() — CS-ÁTUTALÁS fix szélességű TXT: 01 FEJ (174 char) + 02 TÉTEL (249 char) soronként + 03 LÁB (24 char), T213 Math.round() egész forint, T219 közlemény 70 char (18 effektív), ASCII transzliteráció (á→a stb.), getNextWorkday() utalás dátum, KÖTEGEK fül sor, érintett számlák V oszlopa (KOTEG_ID) kitöltve, EUR stub',
+  'BatchGenerator.gs megírva: generateHUFBatch() — CS-ÁTUTALÁS fix szélességű TXT: 01 FEJ (174 char) + 02 TÉTEL (249 char) soronként + 03 LÁB (24 char); _amountToMagnet_(forintAmount) egységesített összeg-konverzió (CONFIG.BATCH_AMOUNT_UNIT: "HUF"=egész forint, "FILLER"=×100 fillér — P11 MagNet teszt után véglegesíthető); T219 közlemény 70 char (18 effektív); ASCII transzliteráció (á→a stb.); getNextWorkday() utalás dátum; KÖTEGEK fül sor; érintett számlák V oszlopa (KOTEG_ID) kitöltve; EUR stub; testP11OneFt() — 1 Ft önátutalás tesztfájl generálás Drive-ra, konzolra kiírja soronként + MagNet feltöltési útmutatót Péternek',
   'Fejlesztő',false,true,false,false,false,null),
 T('F3-S2b','Fázis 3','BatchGenerator.gs',
   'BatchGenerator.gs tesztelve: testBatchFormat() és testPadFunction() futtatva, majd generateAndSaveBatch() staging sheeten JÓVÁHAGYVA státuszú teszt sorokkal',
   'Te',false,false,true,false,false,null,
-  '✓ .txt fájl megjelent a test Kötegek mappában (fájlnév: BATCH-2026-W{hét}-HUF_{dátum}.txt)<br>✓ Sorhossz ellenőrzés — minden sort karakterszámláló szerkesztővel (pl. VS Code) kell mérni:<br>&nbsp;&nbsp;— 01 FEJ sor: pontosan 174 karakter<br>&nbsp;&nbsp;— 02 TÉTEL sorok: pontosan 249 karakter<br>&nbsp;&nbsp;— 03 LÁB sor: pontosan 24 karakter<br>✓ T213 összeg: egész forint, nincs tizedes pont és nincs pont-elválasztó (pl. 125000, nem 125.000 és nem 125000.00)<br>✓ T219 közlemény: max 18 karakter hatékony tartalom beírva (a mezőbe 70 fér, de csak 18 jut el a bankon át)<br>✓ ASCII: ékezetes szöveg transzliterálva (pl. "Körforgás" → "Korforgás" vagy "Korforgasas")<br>✓ KÖTEGEK fülön új sor keletkezett: Köteg ID, generálás dátuma, utalás dátuma (következő munkanapon), összeg, Drive link<br>✓ Érintett BEJÖVŐ_SZÁMLÁK sorok: V oszlop (KOTEG_ID) kitöltve — Q státusz JÓVÁHAGYVA marad<br>✓ getNextWorkday(): pénteki futtatásnál hétfői utalás dátum jelenik meg a fájlban'),
+  '0. lépés — <strong>testP11OneFt() ELŐBB (BLOKKOLÓ):</strong> staging CONFIG fülön ARMADILLO_BANKSZAMLA sor kitöltve cég saját bankszámlaszámával → Apps Script → Run testP11OneFt()<br>✓ .txt fájl megjelent Kötegek TEST/ mappában (fájlnév: TEST-P11-1FT-ATUTALAS_{dátum}.txt)<br>✓ Konzolban soronként kiírva a fájl tartalma, FEJ/TÉTEL/LÁB sorhosszak logolva<br>✓ MagNet feltöltési útmutató kiírva a konzolba Péternek<br>→ P11: Péter feltölti MagNet-be → ha sikeres: BATCH_AMOUNT_UNIT="HUF" végleges, ha hiba: FILLER ágra váltás<br><br>1. lépés — generateAndSaveBatch() tesztelve rendes JÓVÁHAGYVA sorokkal:<br>✓ .txt fájl megjelent a test Kötegek mappában (fájlnév: BATCH-2026-W{hét}-HUF_{dátum}.txt)<br>✓ Sorhossz ellenőrzés — minden sort karakterszámláló szerkesztővel (pl. VS Code) kell mérni:<br>&nbsp;&nbsp;— 01 FEJ sor: pontosan 174 karakter<br>&nbsp;&nbsp;— 02 TÉTEL sorok: pontosan 249 karakter<br>&nbsp;&nbsp;— 03 LÁB sor: pontosan 24 karakter<br>✓ T213 összeg: egész forint, nincs tizedes pont és nincs pont-elválasztó (pl. 125000, nem 125.000 és nem 125000.00)<br>✓ T219 közlemény: max 18 karakter hatékony tartalom beírva (a mezőbe 70 fér, de csak 18 jut el a bankon át)<br>✓ ASCII: ékezetes szöveg transzliterálva (pl. "Körforgás" → "Korforgás" vagy "Korforgasas")<br>✓ KÖTEGEK fülön új sor keletkezett: Köteg ID, generálás dátuma, utalás dátuma (következő munkanapon), összeg, Drive link<br>✓ Érintett BEJÖVŐ_SZÁMLÁK sorok: V oszlop (KOTEG_ID) kitöltve — Q státusz JÓVÁHAGYVA marad<br>✓ getNextWorkday(): pénteki futtatásnál hétfői utalás dátum jelenik meg a fájlban'),
 
 T('P11','Fázis 3','MagNet kódolás teszt (Fejlesztő + Péter)',
   'IBM 852 ASCII kódolás teszt: Fejlesztő generál 1 tételes ASCII-only tesztfájlt (ékezet nélküli cégnév + közlemény, 1 Ft összeg), Péter feltölti MagNet-be belső számlára',
   'Fejlesztő + Péter',true,false,true,false,false,null,
-  'MagNet NetBank → Kötegek → Köteg rögzítés → Csoportos átutalás → Állomány feltöltése<br>Ha importálható: ✓ ASCII stratégia végleges — kódolás kérdés lezárva, nem kell IBM 852 konverzió<br>Ha hibát jelez: Péter visszajelzi a fejlesztőnek: melyik mező, milyen hibaüzenet, hányadik sor — IBM 852 konverziós függvény szükséges (külön task)'),
+  '<strong>1. lépés — Fejlesztő:</strong> Apps Script → Run testP11OneFt()<br>&nbsp;&nbsp;Előfeltétel: staging CONFIG fülön ARMADILLO_BANKSZAMLA = cég saját bankszámlaszáma<br>✓ .txt fájl megjelent Kötegek TEST/ mappában<br>✓ Fájl tartalom soronként kiírva a konzolban, MagNet feltöltési útmutató megjelent<br><br><strong>2. lépés — Péter:</strong> MagNet NetBank → Kötegek → Köteg rögzítés → Csoportos átutalás → Állomány feltöltése<br>Ha importálható: ✓ BATCH_AMOUNT_UNIT="HUF" (egész forint) végleges, ASCII kódolás rendben — P11 lezárva<br>Ha hibát jelez: Péter visszajelzi: melyik mező, milyen hibaüzenet, hányadik sor → BATCH_AMOUNT_UNIT="FILLER" (×100 fillér) ágra váltás, vagy IBM 852 konverzió szükséges'),
 T('P10','Fázis 3','MagNet kódolás teszt (Fejlesztő + Péter)',
   'SEPA kötegállomány formátum bekérése MagNet-ből (EUR ághoz) — elhalasztható ha nincs aktív EUR partner',
   'Péter',false,false,false,false,false,null),
@@ -339,7 +339,7 @@ T('Task 31','Fázis 3','Triggerek és élesítés',
 T('Task 32','Fázis 3','Triggerek és élesítés',
   '+3 napos napi ellenőrző trigger implementálva és tesztelve: JÓVÁHAGYVA státuszú + KOTEG_ID nem üres + utalás dátuma >3 napja múlt és státusz nem UTALVA → Finance Chat (TEST_MODE-ban Admin Chat) figyelmeztetés',
   'Fejlesztő',false,true,true,false,false,null,
-  '✓ Staging sheeten: JÓVÁHAGYVA sor, KOTEG_ID kitöltve, utalás dátuma 4 napja → Chat figyelmeztetés megérkezett'),
+  'Apps Script → Run checkOverdueKotegek() (nem kell várni a napi triggerre)<br>Staging sheet előkészítés: BEJÖVŐ_SZÁMLÁK fülön 1 teszt sor: Q=JÓVÁHAGYVA, KOTEG_ID (V oszlop) kitöltve bármilyen értékkel, utalás dátuma (S oszlop) = mai nap - 4 (régebbi mint 3 napja)<br>✓ checkOverdueKotegek() futtatva → TEST_MODE-ban Admin Chat-en figyelmeztetés megérkezett<br>✓ Érintett sor adatai (szállító, összeg, utalás dátuma) szerepelnek az üzenetben<br>✓ Q=UTALVA státuszú sorhoz NEM érkezik figyelmeztetés<br>✓ 3 napnál nem régebbi utalás dátumnál NEM érkezik figyelmeztetés'),
 T('Task 33','Fázis 3','MagNet NetBank éles teszt (Péter)',
   'MagNet NetBank teszt import: generált .txt kötegállomány letöltve Drive-ról, MagNet-be feltöltve — importálható hiba nélkül',
   'Péter',false,false,true,false,false,null,
@@ -360,7 +360,7 @@ T('Task 43','Fázis 4','Dashboard review (Péter + Ági)',
 
 // ── FÁZIS 5 ───────────────────────────────────────────────────────────────────
 T('F5-S1a','Fázis 5','Triggers.gs',
-  'Triggers.gs megírva: setupAllTriggers() — összes trigger regisztrálása és teardown (15 perc processNewInvoices, szerda 8–9 wednesdayMorningDigest, szerda 14–15 wednesdayAfternoonBatch, havi monthlyFirstOfMonth — január: CONFIG reset + holidays, december: WORKING_SATURDAYS emlékeztető OPS+Finance Chat-en)',
+  'Triggers.gs megírva: setupAllTriggers() — összes trigger regisztrálása és teardown (15 perc processNewInvoices, szerda 8–9 wednesdayMorningDigest, szerda 14–15 wednesdayAfternoonBatch, napi 10:00 checkOverdueKotegek — +3 nap lejárt JÓVÁHAGYVA kötegek Finance Chat figyelmeztetés, havi monthlyFirstOfMonth — január: CONFIG reset + holidays, december: WORKING_SATURDAYS emlékeztető OPS+Finance Chat-en)',
   'Fejlesztő',false,true,false,false,false,null),
 T('F5-S1b','Fázis 5','Triggers.gs',
   'Triggers.gs tesztelve: setupAllTriggers() futtatva autobot@ fiókból, majd listTriggers() ellenőrzés',
@@ -415,13 +415,13 @@ createApp({
         getTasksByGroup(group) { return this.currentPhaseTasks.filter(t=>t.group===group); },
         getOwnerClass(owner) { return OWNER_CLASSES[owner]||'bg-slate-100 text-slate-600 border-slate-200'; },
         toggleTask(task) { task.timestamp=task.done?new Date().toLocaleString('hu-HU'):null; this.saveData(); },
-        saveData() { localStorage.setItem('armadilloTrackerV11',JSON.stringify(this.tasks)); },
+        saveData() { localStorage.setItem('armadilloTrackerV12',JSON.stringify(this.tasks)); },
         loadData() {
-            // V11: friss adat
-            const s11=localStorage.getItem('armadilloTrackerV11');
-            if(s11){ this.tasks=JSON.parse(s11); return; }
-            // Migráció bármely régi verzióból (V4–V10) — a legjobb/legújabb adatot veszi
-            const keys=['armadilloTrackerV10','armadilloTrackerV9','armadilloTrackerV8',
+            // V12: friss adat
+            const s12=localStorage.getItem('armadilloTrackerV12');
+            if(s12){ this.tasks=JSON.parse(s12); return; }
+            // Migráció bármely régi verzióból (V4–V11) — a legjobb/legújabb adatot veszi
+            const keys=['armadilloTrackerV11','armadilloTrackerV10','armadilloTrackerV9','armadilloTrackerV8',
                         'armadilloTrackerV7','armadilloTrackerV6','armadilloTrackerV5','armadilloTrackerV4'];
             let sOld=null;
             for(const k of keys){ sOld=localStorage.getItem(k); if(sOld) break; }
@@ -442,7 +442,8 @@ createApp({
         resetData() {
             if(confirm('Biztosan törlöd az összes pipát?')){
                 ['armadilloTrackerV4','armadilloTrackerV5','armadilloTrackerV6','armadilloTrackerV7',
-                 'armadilloTrackerV8','armadilloTrackerV9','armadilloTrackerV10','armadilloTrackerV11']
+                 'armadilloTrackerV8','armadilloTrackerV9','armadilloTrackerV10','armadilloTrackerV11',
+                 'armadilloTrackerV12']
                 .forEach(k=>localStorage.removeItem(k));
                 this.tasks=JSON.parse(JSON.stringify(initialTasks));
                 this.saveData();
